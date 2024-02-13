@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
 	int btbSize = strtoul(elemnts[0], NULL, 0);
 	int historySize = strtoul(elemnts[1], NULL, 0);
 	int tagSize = strtoul(elemnts[2], NULL, 0);
-	int fsmState =strtoul(elemnts[3], NULL, 0);
+	int fsmState = strtoul(elemnts[3], NULL, 0);
 	if (btbSize == 0 || historySize == 0) {
 		fprintf(stderr, "Error in input file: cannot read config\n");
 		exit(4);
