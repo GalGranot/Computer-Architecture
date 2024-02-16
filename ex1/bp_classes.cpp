@@ -37,6 +37,8 @@ void BtbEntry::clearUpperHistoryBits()
 	history &= mask;
 }
 
+void BtbEntry::setHistorySize(int newHistorySize) { historySize = newHistorySize; }
+
 uint32_t BtbEntry::getTag() { return tag; }
 /*=============================================================================
 * Btb
@@ -44,16 +46,12 @@ uint32_t BtbEntry::getTag() { return tag; }
 Btb::Btb(bool type, unsigned btbSize, bool share)
 	: type(type), share(share), btbSize(btbSize)
 {
-	entries.resize(btbSize);
+	entries = new BtbEntry[btbSize];
 	for (int i = 0; i < btbSize; i++)
-		entries[i] = new BtbEntry();
+		entries[i] = BtbEntry();
 }
 
-Btb::~Btb()
-{
-	for (int i = 0; i < btbSize; i++)
-		delete entries[i];
-}
+Btb::~Btb() { delete[] entries; }
 
 BtbEntry& Btb::getEntry(const uint32_t tag)
 {

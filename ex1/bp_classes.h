@@ -34,7 +34,6 @@ public:
 /*=============================================================================
 * BtbEntry
 =============================================================================*/
-
 class BtbEntry
 {
 private:
@@ -47,11 +46,12 @@ private:
 
 public:
     BtbEntry(uint32_t tag, uint32_t target, uint32_t history)
-        : tag(tag), target(target), history(history) {}
+        : tag(tag), target(target), history(history), historySize(historySize) {}
     BtbEntry() : tag(0), target(0), historySize(0), valid(false) {}
     void updateHistory(bool taken);
     uint8_t getHistory(int historySize);
     uint32_t getTag();
+    void setHistorySize(int newHistorySize);
 };
 
 /*=============================================================================
@@ -63,7 +63,7 @@ private:
     bool type;
     bool share;
     int btbSize;
-    vector<BtbEntry> entries;
+    BtbEntry* entries;  
 
 public:
     Btb(bool type, unsigned btbSize, bool share);
