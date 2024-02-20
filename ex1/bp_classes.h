@@ -9,12 +9,14 @@
 /*=============================================================================
 * defines
 =============================================================================*/
-int constexpr STRONGLY_NOT_TAKEN = 0;
-int constexpr WEAKLY_NOT_TAKEN = 1;
-int constexpr WEAKLY_TAKEN = 2;
-int constexpr STRONGLY_TAKEN = 3;
+constexpr int STRONGLY_NOT_TAKEN = 0;
+constexpr int WEAKLY_NOT_TAKEN = 1;
+constexpr int WEAKLY_TAKEN = 2;
+constexpr int STRONGLY_TAKEN = 3;
 
-int constexpr MAX_HISTORY_SIZE = 8;
+constexpr int MAX_HISTORY_SIZE = 8;
+constexpr int MAX_TAG_SIZE = 30;
+
 using std::vector;
 
 /*=============================================================================
@@ -26,7 +28,7 @@ class Fsm
 private:
     int state = WEAKLY_NOT_TAKEN;
 public:
-    Fsm() : state(WEAKLY_NOT_TAKEN) {}
+    Fsm(int state) : state(state) {}
     void updateState(bool taken);
     int getState();
 };
@@ -37,21 +39,21 @@ public:
 class BtbEntry
 {
 private:
-    const uint32_t tag;
-    const uint32_t target;
+    int tableIndex;
+    uint32_t tag;
+    uint32_t target;
     uint8_t history = 0;
+    int btbSize;
     int historySize;
+    int tagSize;
     bool valid = false;
-    void clearUpperHistoryBits();
 
 public:
-    BtbEntry(uint32_t tag, uint32_t target, uint32_t history)
-        : tag(tag), target(target), history(history), historySize(historySize) {}
-    BtbEntry() : tag(0), target(0), historySize(0), valid(false) {}
+    BtbEntry(uint32_t pc, int btbSize, int historySize, uint32_t _target);
+
     void updateHistory(bool taken);
-    uint8_t getHistory(int historySize);
+    uint8_t getHistory();
     uint32_t getTag();
-    void setHistorySize(int newHistorySize);
 };
 
 /*=============================================================================
@@ -63,7 +65,7 @@ private:
     bool type;
     bool share;
     int btbSize;
-    BtbEntry* entries;  
+    vector<BtbEntry> entries;
 
 public:
     Btb(bool type, unsigned btbSize, bool share);

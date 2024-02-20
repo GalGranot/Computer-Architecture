@@ -24,44 +24,37 @@ void BtbEntry::updateHistory(bool taken)
 	history += taken ? 1 : 0;
 }
 
-uint8_t BtbEntry::getHistory(int historySize)
-{
-	clearUpperHistoryBits();
-	return history;
-}
-
-void BtbEntry::clearUpperHistoryBits()
+uint8_t BtbEntry::getHistory()
 {
 	int bitsToClear = MAX_HISTORY_SIZE - historySize;
 	int mask = (1 << bitsToClear) - 1;
 	history &= mask;
+	return history;
 }
 
-void BtbEntry::setHistorySize(int newHistorySize) { historySize = newHistorySize; }
+BtbEntry::BtbEntry(uint32_t pc, int _btbSize, int _historySize, uint32_t _target)
+{
+	target = _target;
+	history = 0;
+	historySize = _historySize;
+	btbSize = _btbSize;
 
-uint32_t BtbEntry::getTag() { return tag; }
+	pc <<= 2; //erase 00 at beginning of each pc
+	int btbSizeInBits = 0;
+	for(int i = btbSize; i > 1; i /= 2) //calc log_2 of btbSize
+		btbSizeInBits++;
+	//tableIndexMask example:
+	//Btb size is 16 -> 4 bits for representation. Required mask: 0000 1111
+	//1 << btbSizeInBits = 1 << 4 -> 0001 0000, sub 1 -> 0000 1111
+	int tableIndexMask = (1 << btbSizeInBits) - 1;
+	tableIndex = pc & tableIndexMask;
+
+	tag = 0; //FIXME calc tag
+}
 /*=============================================================================
 * Btb
 =============================================================================*/
-Btb::Btb(bool type, unsigned btbSize, bool share)
-	: type(type), share(share), btbSize(btbSize)
-{
-	entries = new BtbEntry[btbSize];
-	for (int i = 0; i < btbSize; i++)
-		entries[i] = BtbEntry();
-}
 
-Btb::~Btb() { delete[] entries; }
-
-BtbEntry& Btb::getEntry(const uint32_t tag)
-{
-	
-}
-
-void Btb::handleEntry(BtbEntry& entry)
-{
-
-}
 
 /*=============================================================================
 * BranchPredictor
