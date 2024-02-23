@@ -1,6 +1,5 @@
+//bp_classes.cpp
 #include "bp_classes.h"
-
-
 /*=============================================================================
 * Fsm
 ============================================================================*/
@@ -15,30 +14,34 @@ void Fsm::update(bool taken)
 }
 bool Fsm::predict() { return state > WEAKLY_NOT_TAKEN; }
 Fsm::Fsm(int initialState) : state(initialState) {}
+Fsm::Fsm() : state(STRONGLY_NOT_TAKEN) {}
 
 /*=============================================================================
 * BtbEntry
 ============================================================================*/
+BtbEntry::BtbEntry() : history(INVALID_ENTRY), pc(INVALID_ENTRY),
+    target(INVALID_ENTRY), tag(INVALID_ENTRY), fsms(0), valid(false) {}
+
 BtbEntry::BtbEntry(uint32_t pc, uint32_t target, vector<Fsm> fsms, int historySize)
     : pc(pc), target(target), fsms(fsms), valid(true)
 {
     int historySizePower2 = 1;
     for(int i = 0; i < historySize; i++)
         historySizePower2 *= 2;
-    fsms.resize(historySizePower2)
+    fsms.resize(historySizePower2);
     //calculate tag from pc
     
 }
 
-BtbEntry::BtbEntry(uint32_t pc, uint32_t target, int historySize, int fsmState)
+BtbEntry::BtbEntry(uint32_t pc, uint32_t target, int historySize, int fsmState, int btbSize)
     : pc(pc), target(target), valid(true)
 {
     int historySizePower2 = 1;
     for(int i = 0; i < historySize; i++)
         historySizePower2 *= 2;
     fsms.resize(historySizePower2);
-    //calculate tag from pc
-    for(int i = 0; i < fsms.size(); i++)
+    tag = calcTagFromPc(pc, btbSize);
+    for(unsigned i = 0; i < fsms.size(); i++)
         fsms[i] = Fsm(fsmState);
 }
 
@@ -60,7 +63,13 @@ uint8_t BtbEntry::getHistory() { return history; }
 ============================================================================*/
 int LocalHistoryLocalFsmBP::placeBtb(uint32_t pc)
 {
-
+    pc <<= 2;
+    int btbSizeInBits = btbSize;
+    for(int i = 0; i < btbSize; i++)
+        btbSizeInBits /= 2;
+    int mask = (1 << btbSizeInBits) - 1;
+    pc &= mask;
+    return pc;
 }
 
 bool LocalHistoryLocalFsmBP::predict(uint32_t pc)
@@ -89,17 +98,54 @@ void LocalHistoryLocalFsmBP::update(uint32_t pc, uint32_t target, bool taken, ui
 
 void LocalHistoryLocalFsmBP::updateStats(bool wrongPrediction)
 {
-    stats->flush_num += wrongPrediction ? 1 : 0;
-    stats->br_num++;
+    stats.flush_num += wrongPrediction ? 1 : 0;
+    stats.br_num++;
 }
 
 void LocalHistoryLocalFsmBP::addEntry(uint32_t pc, uint32_t target)
 {
     int btbIndex = placeBtb(pc);
-    entries[btbIndex] = BtbEntry(pc, target, historySize, fsmState);
+    entries[btbIndex] = BtbEntry(pc, target, historySize, fsmState, btbSize);
 }
 
-LocalHistoryLocalFsmBP::LocalHistoryLocalFsmBP(int btbSize)
+SIM_stats LocalHistoryLocalFsmBP::getStats() { return stats; }
+
+LocalHistoryLocalFsmBP::LocalHistoryLocalFsmBP(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
+    bool isGlobalHist, bool isGlobalTable, int Shared) :
+    btbSize(btbSize), historySize(historySize), tagSize(tagSize), fsmState(fsmState)
+    
 {
     entries.resize(btbSize);
+    stats.br_num = 0;
+    stats.flush_num = 0;
+    stats.size = 0; //FIXME init size of predictor
+}
+
+/*=============================================================================
+* BranchPredictor
+============================================================================*/
+BranchPredictor::BranchPredictor(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
+    bool isGlobalHist, bool isGlobalTable, int Shared)
+    : bp1(btbSize,historySize, tagSize, fsmState,
+    isGlobalHist, isGlobalTable, Shared)
+{
+
+}
+
+BranchPredictor::BranchPredictor() : bp1(0, 0, 0, 0, false, false, 0)
+{
+
+}
+
+/*=============================================================================
+* Global Functions
+============================================================================*/
+uint32_t calcTagFromPc(uint32_t pc, int btbSize)
+{
+    pc <<= 2;
+    int btbSizeInBits = btbSize;
+    for(int i = 0; i < btbSize; i++)
+        btbSizeInBits /= 2;
+    pc <<= btbSizeInBits;
+    return pc;
 }
