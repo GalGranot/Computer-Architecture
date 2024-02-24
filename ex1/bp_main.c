@@ -24,7 +24,14 @@ int main(int argc, char* argv[])
 	//testFsms();
 	// testTableEntry();
 	//testTableEntry();
-	testBP();
+	unsigned btbSize = 16;
+	unsigned historySize = 7;
+	unsigned tagSize = 5;
+	int fsmState = 2;
+	bool isGlobalHist = false;
+	bool isGlobalTable = false;
+	int Shared = 0;
+	BP_init(btbSize, historySize, tagSize, fsmState, isGlobalHist, isGlobalTable, Shared);
 }
 
 // int main(int argc, char **argv) {

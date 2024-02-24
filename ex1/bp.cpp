@@ -49,6 +49,24 @@ void printBinary(uint32_t num, char* name)
 	}
 	printf("%s\n", name);
 }
+// void printBinaryLimited(uint32_t num, char* name, int bitsNum)
+// {
+// 	vector<int> v;
+// 	for(int i = bitsNum; i >= 0; i--)
+// 	{
+// 		bool bitSet = num & (1 << i);
+// 		v.push_back(bitSet ? 1 : 0);
+// 	}
+// 	int size = v.size();
+// 	cout << "v szie = " << size; yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+// 	for(int i = 0; i < v.size() % 4; i++)
+// 		cout << "0";
+// 	for(int i = v.size(); i >= 0; i--)
+// 	{
+// 		cout << (v[i] ? "1" : "0");
+// 	}
+// 	printf(" %s\n", name);
+// }
 
 uint32_t calcTagFromPc(uint32_t pc, unsigned btbSize, unsigned tagSize)
 {
@@ -79,7 +97,7 @@ bool validateArgs(unsigned btbSize, unsigned historySize, unsigned tagSize, unsi
 	   historySize > MAX_HISTORY_SIZE ||
 	   fsmState < STRONGLY_NOT_TAKEN ||
 	   fsmState > STRONGLY_TAKEN ||
-	   (!isGlobalTable || Shared != NOT_USING_SHARE)
+	   (!isGlobalTable && Shared != NOT_USING_SHARE)
 	)
 		return false;
 	return true;
@@ -158,14 +176,6 @@ struct TableEntry
 	{
 		return fsms[getHistory()].predict();
 	}
-	// void print()
-	// {
-	// 	cout << std::hex; 
-	// 	cout << "pc 0x" << pc << endl;
-	// 	cout << "target 0x" << target << endl;
-	// 	printBinary(history, "history");
-	// 	cout << "valid = " << (valid ? "true" : "false") << endl;
-	// }
 
 	void print()
 	{
@@ -216,6 +226,14 @@ struct BranchPredictor
 	void print()
 	{
 		cout << "\n\n========= Printing entries =========\n\n";
+		cout << "BP Paramaters:" << endl <<
+		"btbSize = " << btbSize << endl <<
+		"historySize = " << historySize << endl <<
+		"tagSize = " << tagSize << endl <<
+		"fsmState = " << fsmState << endl <<
+		"isGlobalHist = " << isGlobalHist << endl <<
+		"isGlobalTable = " << isGlobalTable << endl <<
+		"shared = " << shared << "\n" << endl;
 		int i = 0;
 		for(TableEntry& te : entries)
 		{
@@ -274,87 +292,7 @@ struct BranchPredictor
 	}
 };
 
-void testBP()
-{
-	uint32_t pc = 0x108;
-	uint32_t target = 0x108;
-	unsigned btbSize = 4;
-	unsigned tagSize = 16;
-	unsigned historySize = 4;
-	uint32_t* ptr = new uint32_t(0x108);
-
-	BranchPredictor bp(btbSize, historySize, tagSize, STRONGLY_TAKEN, false, false, 0);
-	bp.print();
-	bp.predict(pc, ptr);
-	bp.update(pc, target, true, target);
-
-	// for(int i = 0; i < 32; i++)
-	// {
-	// 	if(i % 4 == 0)
-	// 		{bp.predict(pc, &target); bp.update(pc, target, true, target);}
-	// 	else
-	// 		{bp.predict(pc, &target); bp.update(pc, target, false, target);}
-	// }
-	bp.print();
-	delete ptr;
-}
-
-
-// void testTableEntryLocalFsm()
-// {
-// 	uint32_t pc = 0x108;
-// 	uint32_t target = 0x300;
-// 	unsigned btbSize = 4;
-// 	unsigned tagSize = 16;
-// 	unsigned historySize = 4;
-// 	TableEntry te = TableEntry(pc, target, btbSize, tagSize, historySize, STRONGLY_TAKEN);
-// 	Fsm fsm = Fsm(STRONGLY_NOT_TAKEN);
-// 	vector<Fsm> fsms(std::pow(2, historySize), fsm);
-// 	TableEntry te1 = TableEntry(pc, target, btbSize, tagSize, historySize, fsms);
-// 	if(te.predict())
-// 		cout << "te predicts taken";
-// 	else
-// 		cout << "te predicts not taken";
-// 	if(te1.predict())
-// 		cout << "te1 predicts taken";
-// 	else
-// 		cout << "te1 predicts not taken";
-// }
-
-// void testTableEntry()
-// {
-// 	uint32_t pc = 0x108;
-// 	uint32_t target = 0x300;
-// 	unsigned btbSize = 4;
-// 	unsigned tagSize = 16;
-// 	unsigned historySize = 4;
-// 	unsigned* gHist;
-// 	*gHist = 2;
-
-
-// 	TableEntry gHistTe(pc, target, btbSize, tagSize, gHist, historySize, STRONGLY_NOT_TAKEN);
-// 	TableEntry gHistTe2(pc, target, btbSize, tagSize, gHist, historySize, STRONGLY_NOT_TAKEN);
-// 	TableEntry lHistTe(pc, target, btbSize, tagSize, nullptr, historySize, WEAKLY_NOT_TAKEN);
-// 	for(int i = 0; i < 8; i++)
-// 	{
-// 		gHistTe.update(false);
-// 		gHistTe2.update(true);
-// 		lHistTe.update(true);
-// 	}
-// 	lHistTe.print();
-// 	cout << lHistTe.getHistory() << endl;
-// }
-
-// void testFsms()
-// {
-// 	Fsm fsm(STRONGLY_TAKEN);
-// 	cout << fsm.state << endl;
-// 	fsm.update(false);
-// 	cout << fsm.state << endl;
-// 	cout << "prediction: " << (fsm.predict() ? "taken" : "not taken") << endl;
-// 	fsm.update(false);
-// 	cout << "prediction: " << (fsm.predict() ? "taken" : "not taken") << endl;
-// }
+BranchPredictor* bp;
 
 /*=============================================================================
 * bp public functions
@@ -368,6 +306,8 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned f
 		fprintf(stderr, "invalid arguments\n");
 		return INVALID_ARGS;
 	}
+	bp = new BranchPredictor(btbSize, historySize, tagSize, fsmState, isGlobalHist, isGlobalTable, Shared);
+	bp->print();
 }
 
 bool BP_predict(uint32_t pc, uint32_t *dst)
@@ -382,6 +322,7 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst)
 
 void BP_GetStats(SIM_stats *curStats)
 {
+	delete bp;
 	return;
 }
 
