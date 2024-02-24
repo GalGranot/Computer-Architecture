@@ -24,8 +24,7 @@ int main(int argc, char* argv[])
 	//testFsms();
 	// testTableEntry();
 	//testTableEntry();
-
-	
+	testBP();
 }
 
 // int main(int argc, char **argv) {

@@ -33,6 +33,8 @@ using std::vector;
 
 #define INVALID_ARGS -1
 
+#define DEFAULT_FIELD 0
+
 /*=============================================================================
 * global functions
 =============================================================================*/
@@ -113,10 +115,11 @@ struct TableEntry
 	vector<Fsm> fsms;
 	bool isGlobalHistory;
 
-	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned* globalHistory, unsigned historySize, int fsmState) :
-		tag(calcTagFromPc(pc, btbSize, tagSize)), pc(pc), target(target), history(0), globalHistory(globalHistory),
-		historySize(historySize),valid(true)
+	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned* globalHistory, unsigned historySize, int fsmState, bool valid) :
+		pc(pc), target(target), history(0), globalHistory(globalHistory),
+		historySize(historySize), valid(valid)
 	{
+		tag = calcTagFromPc(pc, btbSize, tagSize);
 		int fsmsNum = std::pow(2, historySize);
 		fsms.resize(fsmsNum);
 		for(int i = 0; i < fsmsNum; i++)
@@ -126,10 +129,12 @@ struct TableEntry
 		else
 			isGlobalHistory = true;
 	}
-	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned* globalHistory, unsigned historySize, vector<Fsm> fsms) :
-		tag(calcTagFromPc(pc, btbSize, tagSize)), pc(pc), target(target), 
-		history(0), globalHistory(globalHistory), historySize(historySize), valid(true), fsms(fsms) 
+	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned* globalHistory, unsigned historySize, vector<Fsm>& fsms, bool valid) :
+		pc(pc), target(target), 
+		history(0), globalHistory(globalHistory), historySize(historySize), valid(false), fsms(fsms)
 	{
+		this->valid = valid;
+		tag = calcTagFromPc(pc, btbSize, tagSize);
 		if(globalHistory == nullptr)
 			isGlobalHistory = false;
 		else
@@ -161,31 +166,139 @@ struct TableEntry
 	// 	printBinary(history, "history");
 	// 	cout << "valid = " << (valid ? "true" : "false") << endl;
 	// }
+
+	void print()
+	{
+		printBinary(pc, "pc");
+		printBinary(tag, "tag");
+		printBinary(target, "target");
+		printBinary(history, "history");
+		cout << "valid = " << (valid ? "true" : "false") << endl;
+	}
 };
 
-// struct BranchPredictor
-// {
-// 	unsigned btbSize;
-// 	unsigned historySize;
-// 	unsigned tagSize;
-// 	unsigned fsmState;
-// 	bool isGlobalHist;
-// 	bool isGlobalTable;
-// 	int shared;
-// 	vector<TableEntry> entries;
+struct BranchPredictor
+{
+	unsigned btbSize;
+	unsigned historySize;
+	unsigned tagSize;
+	unsigned fsmState;
+	bool isGlobalHist;
+	bool isGlobalTable;
+	int shared;
+	unsigned globalHistory;
+	vector<TableEntry> entries;
+	vector<Fsm> globalFsms;
+	SIM_stats stats;
 
-// 	BranchPredictor(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
-// 	bool isGlobalHist, bool isGlobalTable, int Shared) :
-// 		btbSize(btbSize), historySize(historySize), tagSize(tagSize), fsmState(fsmState),
-// 		isGlobalHist(isGlobalHist), isGlobalTable(isGlobalTable), shared(Shared)
-// 	{
-// 		entries.resize(btbSize);
-// 		for(unsigned int i = 0; i < entries.size(); i++)
-// 		{
-// 			entries[i] = TableEntry(historySize);
-// 		}
-// 	}
-// };
+	BranchPredictor(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
+	bool isGlobalHist, bool isGlobalTable, int Shared) :
+		btbSize(btbSize), historySize(historySize), tagSize(tagSize), fsmState(fsmState),
+		isGlobalHist(isGlobalHist), isGlobalTable(isGlobalTable), shared(Shared)
+	{
+		stats = SIM_stats{.br_num = 0, .flush_num = 0, .size = 0};
+		unsigned* globalHistoryArg = isGlobalHist ? &globalHistory : nullptr;
+		if(isGlobalTable)
+		{
+			for(int j = 0; j < std::pow(2, historySize); j++)
+				globalFsms[j] = Fsm(fsmState);
+			for(unsigned int i = 0; i < btbSize; i++)
+				entries.push_back(TableEntry(DEFAULT_FIELD, DEFAULT_FIELD, btbSize, tagSize, globalHistoryArg, historySize, globalFsms, false));
+			//construct entries with global fsm
+		}
+		else
+		{
+			for(unsigned int i = 0; i < btbSize; i++)
+				entries.push_back(TableEntry(DEFAULT_FIELD, DEFAULT_FIELD, btbSize, tagSize, globalHistoryArg, historySize, fsmState, false));
+		}
+	}
+
+	void print()
+	{
+		cout << "\n\n========= Printing entries =========\n\n";
+		int i = 0;
+		for(TableEntry& te : entries)
+		{
+			cout << "=== entry " << i++ << " ===" << endl;
+			te.print();
+		}
+		cout << "\n\n========= End of entries =========\n";
+	}
+
+	TableEntry& findEntryByPc(uint32_t pc) { return entries[calcTableIndexFromPc(pc, btbSize)]; }
+
+	bool predict(uint32_t pc, uint32_t* dst)
+	{
+		TableEntry& te = findEntryByPc(pc);
+		bool taken = false;
+		if(te.valid) //known jump - use predict
+		{
+			taken = te.predict();
+			*dst = te.target;
+		}
+		else //unknown junp
+			*dst = pc + 4;
+		return taken;
+		if(!te.valid)
+		{
+			//handle new entry
+
+		}
+		else
+			taken = te.predict();
+		*dst = taken ? te.target : (pc + 4);
+		return taken;
+	}
+
+	void updateStats(bool predictionCorrect)
+	{
+		stats.br_num++;
+		if(!predictionCorrect)
+			stats.flush_num++;
+	}
+
+	void update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst)
+	{
+		TableEntry& te = findEntryByPc(pc);
+		if(!te.valid) //new jump - add it
+		{
+			te.tag = calcTagFromPc(pc, btbSize, tagSize);
+			te.pc = pc;
+			te.target = targetPc;
+			te.history = 0;
+			te.valid = true;
+		}
+		te.update(taken);
+		bool predictionCorrect = targetPc == targetPc;
+		updateStats(predictionCorrect);
+	}
+};
+
+void testBP()
+{
+	uint32_t pc = 0x108;
+	uint32_t target = 0x108;
+	unsigned btbSize = 4;
+	unsigned tagSize = 16;
+	unsigned historySize = 4;
+	uint32_t* ptr = new uint32_t(0x108);
+
+	BranchPredictor bp(btbSize, historySize, tagSize, STRONGLY_TAKEN, false, false, 0);
+	bp.print();
+	bp.predict(pc, ptr);
+	bp.update(pc, target, true, target);
+
+	// for(int i = 0; i < 32; i++)
+	// {
+	// 	if(i % 4 == 0)
+	// 		{bp.predict(pc, &target); bp.update(pc, target, true, target);}
+	// 	else
+	// 		{bp.predict(pc, &target); bp.update(pc, target, false, target);}
+	// }
+	bp.print();
+	delete ptr;
+}
+
 
 // void testTableEntryLocalFsm()
 // {
