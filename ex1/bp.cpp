@@ -307,21 +307,23 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned f
 		return INVALID_ARGS;
 	}
 	bp = new BranchPredictor(btbSize, historySize, tagSize, fsmState, isGlobalHist, isGlobalTable, Shared);
-	bp->print();
+	return 0;
 }
 
 bool BP_predict(uint32_t pc, uint32_t *dst)
 {
-	return false;
+	return bp->predict(pc, dst);
 }
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst)
 {
-	return;
+	bp->update(pc, targetPc, taken, pred_dst);
 }
 
 void BP_GetStats(SIM_stats *curStats)
 {
+	//cat bp->print();
+	*curStats = bp->stats;
 	delete bp;
 	return;
 }
