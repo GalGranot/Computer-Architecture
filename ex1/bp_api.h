@@ -15,7 +15,6 @@ uint32_t calcTagFromPc(uint32_t pc, unsigned btbSize, unsigned tagSize);
 int calcTableIndexFromPc(uint32_t pc, unsigned btbSize);
 void testFsms();
 void testTableEntry();
-void testTableEntryLocalFsm();
 
 /* A structure to return information about the currect simulator state */
 typedef struct {

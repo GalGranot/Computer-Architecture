@@ -107,58 +107,85 @@ struct TableEntry
 	uint32_t pc;
 	uint32_t target;
 	unsigned history;
+	unsigned* globalHistory;
 	unsigned historySize;
 	bool valid;
 	vector<Fsm> fsms;
+	bool isGlobalHistory;
 
-	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned historySize, int fsmState) :
-		tag(calcTagFromPc(pc, btbSize, tagSize)), pc(pc), target(target), 
-		history(0), historySize(historySize),valid(true)
+	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned* globalHistory, unsigned historySize, int fsmState) :
+		tag(calcTagFromPc(pc, btbSize, tagSize)), pc(pc), target(target), history(0), globalHistory(globalHistory),
+		historySize(historySize),valid(true)
 	{
 		int fsmsNum = std::pow(2, historySize);
 		fsms.resize(fsmsNum);
 		for(int i = 0; i < fsmsNum; i++)
 			fsms[i] = Fsm(fsmState);
+		if(globalHistory == nullptr)
+			isGlobalHistory = false;
+		else
+			isGlobalHistory = true;
 	}
-	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned historySize, vector<Fsm> fsms) :
-	tag(calcTagFromPc(pc, btbSize, tagSize)), pc(pc), target(target), 
-	history(0), historySize(historySize),valid(true), fsms(fsms) {}
-	TableEntry() : tag(0), pc(0), target(0), history(0), valid(false) {}
+	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned* globalHistory, unsigned historySize, vector<Fsm> fsms) :
+		tag(calcTagFromPc(pc, btbSize, tagSize)), pc(pc), target(target), 
+		history(0), globalHistory(globalHistory), historySize(historySize), valid(true), fsms(fsms) 
+	{
+		if(globalHistory == nullptr)
+			isGlobalHistory = false;
+		else
+			isGlobalHistory = true;
+	}
 
 	unsigned getHistory()
 	{
-		unsigned result = history;
+		unsigned result = isGlobalHistory? *globalHistory : history;
 		int mask = (1 << historySize) - 1;
 		result &= mask;
 		return result;
 	}
 	void update(bool taken)
 	{
-		history <<= 1;
-		history += taken ? 1 : 0;
+		unsigned* historyPtr = isGlobalHistory ? globalHistory : &history;
+		*historyPtr <<= 1;
+		*historyPtr += taken ? 1 : 0;
 	}
 	bool predict()
 	{
 		return fsms[getHistory()].predict();
 	}
-	void print()
-	{
-		cout << std::hex; 
-		cout << "pc 0x" << pc << endl;
-		cout << "target 0x" << target << endl;
-		printBinary(history, "history");
-		cout << "valid = " << (valid ? "true" : "false") << endl;
-	}
+	// void print()
+	// {
+	// 	cout << std::hex; 
+	// 	cout << "pc 0x" << pc << endl;
+	// 	cout << "target 0x" << target << endl;
+	// 	printBinary(history, "history");
+	// 	cout << "valid = " << (valid ? "true" : "false") << endl;
+	// }
 };
 
-struct LocalHistLocalFsmBP
-{
-	unsigned btbSize;
-	unsigned historySize;
-	unsigned tagSize;
-	unsigned fsmState;
-	vector<TableEntry> entries;
-};
+// struct BranchPredictor
+// {
+// 	unsigned btbSize;
+// 	unsigned historySize;
+// 	unsigned tagSize;
+// 	unsigned fsmState;
+// 	bool isGlobalHist;
+// 	bool isGlobalTable;
+// 	int shared;
+// 	vector<TableEntry> entries;
+
+// 	BranchPredictor(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
+// 	bool isGlobalHist, bool isGlobalTable, int Shared) :
+// 		btbSize(btbSize), historySize(historySize), tagSize(tagSize), fsmState(fsmState),
+// 		isGlobalHist(isGlobalHist), isGlobalTable(isGlobalTable), shared(Shared)
+// 	{
+// 		entries.resize(btbSize);
+// 		for(unsigned int i = 0; i < entries.size(); i++)
+// 		{
+// 			entries[i] = TableEntry(historySize);
+// 		}
+// 	}
+// };
 
 // void testTableEntryLocalFsm()
 // {
@@ -188,17 +215,21 @@ struct LocalHistLocalFsmBP
 // 	unsigned btbSize = 4;
 // 	unsigned tagSize = 16;
 // 	unsigned historySize = 4;
-	
-// 	TableEntry te(pc, target, btbSize, tagSize, historySize);
-// 	cout << te.getHistory() << endl;
-// 	te.print();
-// 	te.update(true);
-// 	te.update(false);
+// 	unsigned* gHist;
+// 	*gHist = 2;
+
+
+// 	TableEntry gHistTe(pc, target, btbSize, tagSize, gHist, historySize, STRONGLY_NOT_TAKEN);
+// 	TableEntry gHistTe2(pc, target, btbSize, tagSize, gHist, historySize, STRONGLY_NOT_TAKEN);
+// 	TableEntry lHistTe(pc, target, btbSize, tagSize, nullptr, historySize, WEAKLY_NOT_TAKEN);
 // 	for(int i = 0; i < 8; i++)
-// 		if(i % 3 == 0)	
-// 			te.update(true);
-// 	te.print();
-// 	cout << "history = " << te.getHistory() << endl;
+// 	{
+// 		gHistTe.update(false);
+// 		gHistTe2.update(true);
+// 		lHistTe.update(true);
+// 	}
+// 	lHistTe.print();
+// 	cout << lHistTe.getHistory() << endl;
 // }
 
 // void testFsms()
