@@ -6,33 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+
 #include "bp_api.h"
-// void printValue(char* name, int value)
-// {
-// 	printf("%s = %d\n", name, value);
-// }
-
-// int main(int argc, char* argv[])
-// {
-// 	// uint32_t pc = 0x128;
-// 	// int tagSize = 16;
-// 	// int btbSize = 4;
-// 	// //printValue("tag", calcTagFromPc(pc, btbSize, tagSize));
-// 	// printf("tag = 0x%0x\n",calcTagFromPc(pc, btbSize, tagSize));
-// 	// printf("btb index = %d\n", calcTableIndexFromPc(pc, btbSize));
-
-// 	//testFsms();
-// 	// testTableEntry();
-// 	//testTableEntry();
-// 	unsigned btbSize = 16;
-// 	unsigned historySize = 7;
-// 	unsigned tagSize = 5;
-// 	int fsmState = 2;
-// 	bool isGlobalHist = false;
-// 	bool isGlobalTable = false;
-// 	int Shared = 0;
-// 	BP_init(btbSize, historySize, tagSize, fsmState, isGlobalHist, isGlobalTable, Shared);
-// }
 
 int main(int argc, char **argv) {
 
@@ -62,7 +37,7 @@ int main(int argc, char **argv) {
 	int btbSize = strtoul(elemnts[0], NULL, 0);
 	int historySize = strtoul(elemnts[1], NULL, 0);
 	int tagSize = strtoul(elemnts[2], NULL, 0);
-	int fsmState =strtoul(elemnts[3], NULL, 0);
+	int fsmState = strtoul(elemnts[3], NULL, 0);
 	if (btbSize == 0 || historySize == 0) {
 		fprintf(stderr, "Error in input file: cannot read config\n");
 		exit(4);
@@ -96,58 +71,47 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Error in input file: cannot read config\n");
 		exit(7);
 	}
-
+	printf("herer");
 	if (BP_init(btbSize, historySize, tagSize,fsmState, isGlobalHist,
 			isGlobalTable, Shared) < 0) {
 		fprintf(stderr, "Predictor init failed\n");
 		exit(8);
 	}
 
-	while ((fgets(line, 256, trace) != NULL)) {
-		if (line[0] == '\n') {
-			break;
-		}
-		char *elemnts[3];
-		int i = 0;
-		elemnts[0] = strtok(line, " ");
-		for (i = 1; i < 3; ++i) {
-			elemnts[i] = strtok(NULL, " \n");
-		}
+// 	while ((fgets(line, 256, trace) != NULL)) {
+// 		if (line[0] == '\n') {
+// 			break;
+// 		}
+// 		char *elemnts[3];
+// 		int i = 0;
+// 		elemnts[0] = strtok(line, " ");
+// 		for (i = 1; i < 3; ++i) {
+// 			elemnts[i] = strtok(NULL, " \n");
+// 		}
+// 		uint32_t pc = (uint32_t) strtol(elemnts[0], NULL, 0);
+// 		uint32_t targetPc = (uint32_t) strtol(elemnts[2], NULL, 0);
+// 		bool taken;
+// 		if (strcmp(elemnts[1], "T") == 0) {
+// 			taken = true;
+// 		} else if (strcmp(elemnts[1], "N") == 0) {
+// 			taken = false;
+// 		} else {
+// 			fprintf(stderr, "Error in input file: bad trace\n");
+// 			exit(9);
+// 		}
+// 		uint32_t dst = 0;
+// 		printf("0x%x ", pc);
+// 		printf("%c ", (BP_predict(pc, &dst)? 'T' : 'N'));
+// 		printf("0x%x\n", dst);
 
 
-		// printf("Line: ");
-		// for(int i = 0; i < 3; i++)
-		// {
-		// 	printf("%s ", elemnts[i]);
-		// }
-		// printf("\n");//FIXME remove this
+// 		BP_update(pc, targetPc, taken, dst);
+// 	}
 
-
-
-
-		uint32_t pc = (uint32_t) strtol(elemnts[0], NULL, 0);
-		uint32_t targetPc = (uint32_t) strtol(elemnts[2], NULL, 0);
-		bool taken;
-		if (strcmp(elemnts[1], "T") == 0) {
-			taken = true;
-		} else if (strcmp(elemnts[1], "N") == 0) {
-			taken = false;
-		} else {
-			fprintf(stderr, "Error in input file: bad trace\n");
-			exit(9);
-		}
-		uint32_t dst = 0;
-		printf("0x%x ", pc);
-		printf("%c ", (BP_predict(pc, &dst)? 'T' : 'N'));
-		printf("0x%x\n", dst);
-
-
-		BP_update(pc, targetPc, taken, dst);
-	}
-
-	SIM_stats stats;
-	BP_GetStats(&stats);
-	printf("flush_num: %d, br_num: %d, size: %db\n", stats.flush_num, stats.br_num, stats.size);
+// 	SIM_stats stats;
+// 	BP_GetStats(&stats);
+// 	printf("flush_num: %d, br_num: %d, size: %db\n", stats.flush_num, stats.br_num, stats.size);
 
 	return 0;
 }
+

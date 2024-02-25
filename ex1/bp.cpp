@@ -57,7 +57,7 @@ void printBinary(uint32_t num, char* name)
 // 		v.push_back(bitSet ? 1 : 0);
 // 	}
 // 	int size = v.size();
-// 	cout << "v szie = " << size; yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+// 	cout << "v szie = " << size;
 // 	for(int i = 0; i < v.size() % 4; i++)
 // 		cout << "0";
 // 	for(int i = v.size(); i >= 0; i--)
@@ -74,6 +74,7 @@ uint32_t calcTagFromPc(uint32_t pc, unsigned btbSize, unsigned tagSize)
 	result >>= (2 + btbSizeInBits);
 	int mask = (1 << tagSize) - 1;
 	result &= mask;
+	//cout << "pc = 0x" << std::hex << pc << " has tag = 0x" << result << endl << std::dec;
 	return result;
 }
 
@@ -84,6 +85,7 @@ int calcTableIndexFromPc(uint32_t pc, unsigned btbSize)
 	result >>= 2;
 	int mask = (1 << btbSizeInBits) - 1;
 	result &= mask;
+	//cout << "pc = 0x" << std::hex << pc << " is in index " << std::dec << result << " of btb" << endl;
 	return result;
 }
 
@@ -112,6 +114,12 @@ struct Fsm
 	Fsm(int state) : state(state) {}
 	void update(bool taken)
 	{
+		assert((state >= STRONGLY_NOT_TAKEN && state <= STRONGLY_TAKEN) && "state out of bounds");
+		if(taken)
+			state = std::min(STRONGLY_TAKEN, state + 1);
+		else
+			state = std::max(STRONGLY_NOT_TAKEN, state - 1);
+
 		if(taken && state != STRONGLY_TAKEN)
 			state++;
 		else if(!taken && state != STRONGLY_NOT_TAKEN)
@@ -176,11 +184,16 @@ struct TableEntry
 	
 	void print()
 	{
-		printBinary(pc, "pc");
-		printBinary(tag, "tag");
-		printBinary(target, "target");
+		cout << std::hex;
+		cout << "0x" << pc << " pc\n";
+		cout << "0x" << tag << " tag\n";
+		cout << "0x" << target << " target\n";
 		printBinary(history, "history");
 		cout << "valid = " << (valid ? "true" : "false") << endl;
+		int i = 0;
+		for(Fsm& fsm : fsms)
+			cout << "Fsm " << i++ << " state = " << fsm.state << endl;
+		cout << endl;
 	}
 };
 
@@ -229,14 +242,14 @@ struct BranchPredictor
 	void print()
 	{
 		cout << "\n\n========= Printing entries =========\n\n";
-		cout << "BP Paramaters:" << endl <<
-		"btbSize = " << btbSize << endl <<
-		"historySize = " << historySize << endl <<
-		"tagSize = " << tagSize << endl <<
-		"fsmState = " << fsmState << endl <<
-		"isGlobalHist = " << isGlobalHist << endl <<
-		"isGlobalTable = " << isGlobalTable << endl <<
-		"shared = " << shared << "\n" << endl;
+		// cout << "BP Paramaters:" << endl <<
+		// "btbSize = " << btbSize << endl <<
+		// "historySize = " << historySize << endl <<
+		// "tagSize = " << tagSize << endl <<
+		// "fsmState = " << fsmState << endl <<
+		// "isGlobalHist = " << isGlobalHist << endl <<
+		// "isGlobalTable = " << isGlobalTable << endl <<
+		// "shared = " << shared << "\n" << endl;
 		int i = 0;
 		for(TableEntry& te : entries)
 		{
@@ -251,14 +264,8 @@ struct BranchPredictor
 	bool predict(uint32_t pc, uint32_t* dst)
 	{
 		TableEntry& te = findEntryByPc(pc);
-		bool taken = false;
-		if(te.valid) //known jump - use predict
-		{
-			taken = te.predict();
-			*dst = te.target;
-		}
-		else //unknown junp
-			*dst = pc + 4;
+		bool taken = te.valid ? te.predict() : false;
+		*dst = taken ? te.target : pc + 4;
 		return taken;
 	}
 
@@ -272,16 +279,17 @@ struct BranchPredictor
 	void update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst)
 	{
 		TableEntry& te = findEntryByPc(pc);
-		if(!te.valid) //new jump - add it
+		bool predictionCorrect = (taken == te.predict());
+		uint32_t newTag = calcTagFromPc(pc, btbSize, tagSize);
+		if(!te.valid || (te.valid && te.tag != newTag)) //new or indistinguishable jump - initialize it
 		{
-			te.tag = calcTagFromPc(pc, btbSize, tagSize);
+			//cout << "new entry at index " << calcTableIndexFromPc(pc, btbSize) << endl; FIXME remove
+			te.tag = newTag;
 			te.pc = pc;
 			te.target = targetPc;
 			te.history = 0;
 			te.valid = true;
 		}
-		te.update(taken);
-		bool predictionCorrect = targetPc == pred_dst;
 		updateStats(predictionCorrect);
 	}
 };
@@ -301,6 +309,8 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned f
 		return INVALID_ARGS;
 	}
 	bp = new BranchPredictor(btbSize, historySize, tagSize, fsmState, isGlobalHist, isGlobalTable, Shared);
+	//cout << "================================== beginning ==================================" << endl;
+	//bp->print();
 	return 0;
 }
 
@@ -312,11 +322,13 @@ bool BP_predict(uint32_t pc, uint32_t *dst)
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst)
 {
 	bp->update(pc, targetPc, taken, pred_dst);
+	//bp->print();
 }
 
 void BP_GetStats(SIM_stats *curStats)
 {
-	//cat bp->print();
+	//cout << "================================== end ==================================" << endl;
+	//bp->print();
 	*curStats = bp->stats;
 	delete bp;
 	return;
