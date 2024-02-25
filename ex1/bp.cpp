@@ -10,7 +10,6 @@
 #include <stdio.h>
 #include <cmath>
 #include <iostream>
-#include <bitset>
 #include <vector>
 using std::cout;
 using std::endl;
@@ -19,21 +18,20 @@ using std::vector;
 /*=============================================================================
 * constexpressings, defines
 =============================================================================*/
-#define MIN_FIELD_SIZE 1
-#define MAX_HISTORY_SIZE 8
+constexpr int MIN_FIELD_SIZE = 1;
+constexpr int MAX_HISTORY_SIZE = 8;
 
-#define STRONGLY_NOT_TAKEN 0
-#define WEAKLY_NOT_TAKEN 1
-#define WEAKLY_TAKEN 2
-#define STRONGLY_TAKEN 3
+constexpr int STRONGLY_NOT_TAKEN = 0;
+constexpr int WEAKLY_NOT_TAKEN = 1;
+constexpr int WEAKLY_TAKEN = 2;
+constexpr int STRONGLY_TAKEN = 3;
 
-#define NOT_USING_SHARE 0
-#define USING_SHARE_LSB 1
-#define USING_SHARE_MID 2
+constexpr int NOT_USING_SHARE = 0;
+constexpr int USING_SHARE_LSB = 1;
+constexpr int USING_SHARE_MID = 2;
 
-#define INVALID_ARGS -1
-
-#define DEFAULT_FIELD 0
+constexpr int INVALID_ARGS = -1;
+constexpr int DEFAULT_FIELD = 0;
 
 /*=============================================================================
 * global functions
@@ -133,30 +131,56 @@ struct TableEntry
 	vector<Fsm> fsms;
 	bool isGlobalHistory;
 
-	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned* globalHistory, unsigned historySize, int fsmState, bool valid) :
-		pc(pc), target(target), history(0), globalHistory(globalHistory),
-		historySize(historySize), valid(valid)
+    //FIXME make sure init lists are conducted in order or move them to body of ctor
+	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize,
+        unsigned* globalHistory, unsigned historySize, int fsmState, bool valid) :
+        pc(pc),
+        target(target),
+        history(0),
+        globalHistory(globalHistory),
+        historySize(historySize),
+        valid(valid),
+        fsms(std::pow(2, historySize), Fsm(fsmState)), //check this fsm init
+        isGlobalHistory((globalHistory == nullptr) ? false : true)
+    {
+        tag = calcTagFromPc(pc, btbSize, tagSize);
+    }
+		// pc(pc), target(target), history(0), globalHistory(globalHistory),
+		// historySize(historySize), valid(valid) 
+	//{
+		//tag = calcTagFromPc(pc, btbSize, tagSize);
+        //for (int i = 0; i < std::pow(2, historySize); i++) //FIXME check this works and remove comment below
+        //    fsms.push_back(Fsm(fsmState));
+        // int fsmsNum = std::pow(2, historySize);
+		// fsms.resize(fsmsNum);
+		// for(int i = 0; i < fsmsNum; i++)
+		// 	fsms[i] = Fsm(fsmState);
+        //isGlobalHistory = (globalHistory == nullptr) ? false : true; //FIXME check this works and remove comment below
+        // if(globalHistory == nullptr)
+		// 	isGlobalHistory = false;
+		// else
+		// 	isGlobalHistory = true;
+	//}
+    //FIXME make sure init lists are conducted in order or move them to body of ctor
+	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize,
+        unsigned* globalHistory, unsigned historySize, vector<Fsm>& fsms, bool valid) :
+        pc(pc),
+        target(target),
+        history(0),
+        globalHistory(globalHistory),
+        historySize(historySize),
+        valid(false),
+        fsms(fsms)
+		// pc(pc), target(target), history(0), globalHistory(globalHistory),
+        // historySize(historySize), valid(false), fsms(fsms)
+        // isGlobalHistory((globalHistory == nullptr) ? false : true)
 	{
 		tag = calcTagFromPc(pc, btbSize, tagSize);
-		int fsmsNum = std::pow(2, historySize);
-		fsms.resize(fsmsNum);
-		for(int i = 0; i < fsmsNum; i++)
-			fsms[i] = Fsm(fsmState);
-		if(globalHistory == nullptr)
-			isGlobalHistory = false;
-		else
-			isGlobalHistory = true;
-	}
-	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize, unsigned* globalHistory, unsigned historySize, vector<Fsm>& fsms, bool valid) :
-		pc(pc), target(target), 
-		history(0), globalHistory(globalHistory), historySize(historySize), valid(false), fsms(fsms)
-	{
-		this->valid = valid;
-		tag = calcTagFromPc(pc, btbSize, tagSize);
-		if(globalHistory == nullptr)
-			isGlobalHistory = false;
-		else
-			isGlobalHistory = true;
+        isGlobalHistory = (globalHistory == nullptr) ? false : true; //FIXME check this works and remove comment below
+		// if(globalHistory == nullptr)
+		// 	isGlobalHistory = false;
+		// else
+		// 	isGlobalHistory = true;
 	}
 
 	unsigned getHistory()
@@ -169,14 +193,11 @@ struct TableEntry
 	void update(bool taken)
 	{
 		unsigned* historyPtr = isGlobalHistory ? globalHistory : &history;
-		*historyPtr <<= 1;
+        fsms[*historyPtr].update(taken);
+        *historyPtr <<= 1;
 		*historyPtr += taken ? 1 : 0;
 	}
-	bool predict()
-	{
-		return fsms[getHistory()].predict();
-	}
-
+	bool predict() { return fsms[getHistory()].predict(); }
 	void print()
 	{
 		printBinary(pc, "pc");
@@ -201,28 +222,31 @@ struct BranchPredictor
 	vector<Fsm> globalFsms;
 	SIM_stats stats;
 
-	BranchPredictor(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
-	bool isGlobalHist, bool isGlobalTable, int Shared) :
+    //FIXME make sure init lists are in correct order or move them to body of ctor
+	BranchPredictor(unsigned btbSize, unsigned historySize, unsigned tagSize,
+        unsigned fsmState, bool isGlobalHist, bool isGlobalTable, int Shared) :
 		btbSize(btbSize), historySize(historySize), tagSize(tagSize), fsmState(fsmState),
-		isGlobalHist(isGlobalHist), isGlobalTable(isGlobalTable), shared(Shared)
+        isGlobalHist(isGlobalHist), isGlobalTable(isGlobalTable), shared(Shared)
 	{
 		stats = SIM_stats{.br_num = 0, .flush_num = 0, .size = 0};
+        //if globalHistoryArg != nullptr, that's where the entries update history.
+        //if globalHistoryArg == nullptr, the entries update their own history
 		unsigned* globalHistoryArg = isGlobalHist ? &globalHistory : nullptr;
 		if(isGlobalTable)
 		{
 			for(int j = 0; j < std::pow(2, historySize); j++)
 				globalFsms[j] = Fsm(fsmState);
-			for(unsigned int i = 0; i < btbSize; i++)
-				entries.push_back(TableEntry(DEFAULT_FIELD, DEFAULT_FIELD, btbSize, tagSize, globalHistoryArg, historySize, globalFsms, false));
-			//construct entries with global fsm
+			for(unsigned int i = 0; i < btbSize; i++) //construct entries with global fsm
+				entries.push_back(TableEntry(DEFAULT_FIELD, DEFAULT_FIELD, btbSize,
+                    tagSize, globalHistoryArg, historySize, globalFsms, false));
 		}
 		else
 		{
-			for(unsigned int i = 0; i < btbSize; i++)
-				entries.push_back(TableEntry(DEFAULT_FIELD, DEFAULT_FIELD, btbSize, tagSize, globalHistoryArg, historySize, fsmState, false));
+			for(unsigned int i = 0; i < btbSize; i++) //construct entries with local fsm
+				entries.push_back(TableEntry(DEFAULT_FIELD, DEFAULT_FIELD, btbSize,
+                    tagSize, globalHistoryArg, historySize, fsmState, false));
 		}
 	}
-
 	void print()
 	{
 		cout << "\n\n========= Printing entries =========\n\n";
@@ -257,15 +281,6 @@ struct BranchPredictor
 		else //unknown junp
 			*dst = pc + 4;
 		return taken;
-		if(!te.valid)
-		{
-			//handle new entry
-
-		}
-		else
-			taken = te.predict();
-		*dst = taken ? te.target : (pc + 4);
-		return taken;
 	}
 
 	void updateStats(bool predictionCorrect)
@@ -287,7 +302,7 @@ struct BranchPredictor
 			te.valid = true;
 		}
 		te.update(taken);
-		bool predictionCorrect = targetPc == targetPc;
+		bool predictionCorrect = targetPc == pred_dst;
 		updateStats(predictionCorrect);
 	}
 };
