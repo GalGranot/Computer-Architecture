@@ -74,7 +74,6 @@ uint32_t calcTagFromPc(uint32_t pc, unsigned btbSize, unsigned tagSize)
 	result >>= (2 + btbSizeInBits);
 	int mask = (1 << tagSize) - 1;
 	result &= mask;
-	//cout << "pc = 0x" << std::hex << pc << " has tag = 0x" << result << endl << std::dec;
 	return result;
 }
 
@@ -85,7 +84,6 @@ int calcTableIndexFromPc(uint32_t pc, unsigned btbSize)
 	result >>= 2;
 	int mask = (1 << btbSizeInBits) - 1;
 	result &= mask;
-	//cout << "pc = 0x" << std::hex << pc << " is in index " << std::dec << result << " of btb" << endl;
 	return result;
 }
 
@@ -168,7 +166,7 @@ struct TableEntry
 
 	unsigned getHistory()
 	{
-		unsigned result = isGlobalHistory? *globalHistory : history;
+		unsigned result = isGlobalHistory ? *globalHistory : history;
 		int mask = (1 << historySize) - 1;
 		result &= mask;
 		return result;
@@ -309,8 +307,8 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned f
 		return INVALID_ARGS;
 	}
 	bp = new BranchPredictor(btbSize, historySize, tagSize, fsmState, isGlobalHist, isGlobalTable, Shared);
-	//cout << "================================== beginning ==================================" << endl;
-	//bp->print();
+	cout << "================================== beginning ==================================" << endl;
+	bp->print();
 	return 0;
 }
 
@@ -322,13 +320,13 @@ bool BP_predict(uint32_t pc, uint32_t *dst)
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst)
 {
 	bp->update(pc, targetPc, taken, pred_dst);
-	//bp->print();
+	bp->print();
 }
 
 void BP_GetStats(SIM_stats *curStats)
 {
-	//cout << "================================== end ==================================" << endl;
-	//bp->print();
+	cout << "================================== end ==================================" << endl;
+	bp->print();
 	*curStats = bp->stats;
 	delete bp;
 	return;

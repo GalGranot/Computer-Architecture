@@ -1,0 +1,6 @@
+implement gshare/lshare
+maya - make sure calc works
+remove validate args
+remove asserts in fsm
+check which fsm update works and remove the other one
+calculcate size for sim_stats
