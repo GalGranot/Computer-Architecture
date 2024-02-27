@@ -21,7 +21,7 @@ using std::vector;
 =============================================================================*/
 constexpr int MIN_FIELD_SIZE = 1;
 constexpr int MAX_HISTORY_SIZE = 8;
-constexpr int PC_SIZE = 32;
+constexpr int PC_SIZE = 30;
 
 constexpr int STRONGLY_NOT_TAKEN = 0;
 constexpr int WEAKLY_NOT_TAKEN = 1;
@@ -291,12 +291,13 @@ struct BranchPredictor
 		stats.br_num = 0;
 		stats.flush_num = 0;
 		// calculate size of BTB:
+		int validBitsSize = 1 * btbSize;
 		int targetSize = PC_SIZE;
 		int fsmSize = 2 * std::pow(2, historySize);
 		int isGlobalHistFlag = isGlobalHist ? 0 : 1;
 		int fsmsSize = isGlobalTable ? fsmSize : fsmSize * btbSize;
 		int tableSize = btbSize * (tagSize + targetSize + isGlobalHistFlag * historySize) + (1 - isGlobalHistFlag) * historySize;
-		stats.size = tableSize + fsmsSize;
+		stats.size = tableSize + fsmsSize + validBitsSize;
 	}
 	void print()
 	{
