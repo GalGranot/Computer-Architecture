@@ -136,13 +136,14 @@ struct TableEntry
 	bool valid;
 	vector<Fsm> fsms;
 	bool isGlobalHistory;
+	bool isGlobalTable
 	unsigned shared;
 	uint32_t tag;
 	uint32_t pc;
 	uint32_t target;
 
 	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize,
-		unsigned* globalHistory, unsigned historySize, unsigned isGlobalTable, unsigned shared, int fsmState, bool valid) :
+		unsigned* globalHistory, unsigned historySize, bool isGlobalTable, unsigned shared, int fsmState, bool valid) :
 		pc(pc),
 		target(target),
 		history(0),
@@ -157,7 +158,7 @@ struct TableEntry
 
 	
 	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize,
-		unsigned* globalHistory, unsigned historySize, unsigned isGlobalTable, unsigned shared, vector<Fsm>& fsms, bool valid) :
+		unsigned* globalHistory, unsigned historySize, bool isGlobalTable, unsigned shared, vector<Fsm>& fsms, bool valid) :
 		pc(pc),
 		target(target),
 		history(0),
@@ -180,13 +181,13 @@ struct TableEntry
 		}
 		else if (isGlobalTable && (shared == USING_SHARE_LSB))
 		{
-			pc_lsb >>= 2;
+			uint32_t pc_lsb = pc >> 2;
 			pc_lsb &= mask;
 			unsigned result = isGlobalHistory ? (*globalHistory ^ pc_lsb) : (history ^ pc_lsb);
 		}
 		else if (isGlobalTable && (shared == USING_SHARE_MID))
 		{
-			pc_mid >>= 16;
+			uint32_t pc_mid = pc >> 16;
 			pc_mid &= mask;
 			unsigned result = isGlobalHistory ? (*globalHistory ^ pc_mid) : (history ^ pc_mid);
 		}
@@ -205,13 +206,13 @@ struct TableEntry
 		}
 		else if (isGlobalTable && (shared == USING_SHARE_LSB))
 		{
-			pc_lsb >>= 2;
+			uint32_t pc_lsb = pc >> 2;
 			pc_lsb &= mask;
 			unsigned historyPtr = isGlobalHistory ? (*globalHistory ^ pc_lsb) : (history ^ pc_lsb);
 		}
 		else if (isGlobalTable && (shared == USING_SHARE_MID))
 		{
-			pc_mid >>= 16;
+			uint32_t pc_mid = pc >> 16;
 			pc_mid &= mask;
 			unsigned historyPtr = isGlobalHistory ? (*globalHistory ^ pc_mid) : (history ^ pc_mid);
 		}
@@ -285,11 +286,11 @@ struct BranchPredictor
 			}
 
 		// calculate size of BTB:
-		targetSize = PC_SIZE;
-		fsmSize = 2 * std::pow(2, historySize);
-		isGlobalHistFlag = isGlobalHist ? 0 : 1;
-		fsmsSize = isGlobalTable ? fsmSize : fsmSize * btbSize;
-		tableSize = btbSize * (tagSize + targetSize + isGlobalHistFlag * historySize) + (1 - isGlobalHistFlag) * historySize;
+		int targetSize = PC_SIZE;
+		int fsmSize = 2 * std::pow(2, historySize);
+		int isGlobalHistFlag = isGlobalHist ? 0 : 1;
+		int fsmsSize = isGlobalTable ? fsmSize : fsmSize * btbSize;
+		int tableSize = btbSize * (tagSize + targetSize + isGlobalHistFlag * historySize) + (1 - isGlobalHistFlag) * historySize;
 		stats.size = tableSize + fsmsSize;
 	}
 	void print()
