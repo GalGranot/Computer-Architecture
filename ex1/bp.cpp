@@ -235,8 +235,7 @@ struct TableEntry
 		cout << "0x" << pc << " pc\n";
 		cout << "0x" << tag << " tag\n";
 		cout << "0x" << target << " target\n";
-		char hist = "history";
-		printBinary(history, &hist);
+		printBinary(history, "history");
 		cout << "valid = " << (valid ? "true" : "false") << endl;
 		int i = 0;
 		for(Fsm& fsm : fsms)
