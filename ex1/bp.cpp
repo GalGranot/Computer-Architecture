@@ -382,7 +382,7 @@ bool BP_predict(uint32_t pc, uint32_t *dst)
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst)
 {
 	bp->update(pc, targetPc, taken, pred_dst);
-	//bp->print();
+	//bp->print(); 
 }
 
 void BP_GetStats(SIM_stats *curStats)
