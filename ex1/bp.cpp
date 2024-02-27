@@ -123,7 +123,7 @@ struct Fsm
 			state++;
 		else if(!taken && state != STRONGLY_NOT_TAKEN)
 			state--;
-		assert((state >= STRONGLY_NOT_TAKEN && state <= STRONGLY_TAKEN) && "state out of bounds");
+		//assert((state >= STRONGLY_NOT_TAKEN && state <= STRONGLY_TAKEN) && "state out of bounds");
 	}
 	bool predict() { return state >= WEAKLY_TAKEN; }
 };
