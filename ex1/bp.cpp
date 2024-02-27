@@ -235,7 +235,8 @@ struct TableEntry
 		cout << "0x" << pc << " pc\n";
 		cout << "0x" << tag << " tag\n";
 		cout << "0x" << target << " target\n";
-		printBinary(history, "history");
+		char hist = "history";
+		printBinary(history, &hist);
 		cout << "valid = " << (valid ? "true" : "false") << endl;
 		int i = 0;
 		for(Fsm& fsm : fsms)
@@ -266,8 +267,9 @@ struct BranchPredictor
 		fsmState(fsmState),
 		isGlobalHist(isGlobalHist),
 		isGlobalTable(isGlobalTable),
-		shared(Shared),
-		stats(SIM_stats{.br_num = 0, .flush_num = 0, .size = 0})
+		shared(Shared)
+		//stats(SIM_stats{.br_num = 0, .flush_num = 0, .size = 0})
+		//stats(br_num(0), flush_num(0), size(0))
 	{
 		//if globalHistoryArg != nullptr, it's a pointer to the global history register
 		//if globalHistoryArg == nullptr. the entries update their own history
@@ -286,6 +288,9 @@ struct BranchPredictor
 					DEFAULT_FIELD, btbSize, tagSize, globalHistoryArg, historySize, isGlobalTable, shared, fsmState, false));
 			}
 
+		// initialize stats:
+		stats.br_num = 0;
+		stats.flush_num = 0;
 		// calculate size of BTB:
 		int targetSize = PC_SIZE;
 		int fsmSize = 2 * std::pow(2, historySize);
