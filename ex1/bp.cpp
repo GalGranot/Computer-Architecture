@@ -136,7 +136,7 @@ struct TableEntry
 	bool valid;
 	vector<Fsm> fsms;
 	bool isGlobalHistory;
-	bool isGlobalTable
+	bool isGlobalTable;
 	unsigned shared;
 	uint32_t tag;
 	uint32_t pc;
@@ -174,22 +174,22 @@ struct TableEntry
 	unsigned getHistory()
 	{
 		int mask = (1 << historySize) - 1;
-
+		unsigned result = 0;
 		if (shared == NOT_USING_SHARE)
 		{
-			unsigned result = isGlobalHistory ? *globalHistory : history;
+			result = isGlobalHistory ? *globalHistory : history;
 		}
 		else if (isGlobalTable && (shared == USING_SHARE_LSB))
 		{
 			uint32_t pc_lsb = pc >> 2;
 			pc_lsb &= mask;
-			unsigned result = isGlobalHistory ? (*globalHistory ^ pc_lsb) : (history ^ pc_lsb);
+			result = isGlobalHistory ? (*globalHistory ^ pc_lsb) : (history ^ pc_lsb);
 		}
 		else if (isGlobalTable && (shared == USING_SHARE_MID))
 		{
 			uint32_t pc_mid = pc >> 16;
 			pc_mid &= mask;
-			unsigned result = isGlobalHistory ? (*globalHistory ^ pc_mid) : (history ^ pc_mid);
+			result = isGlobalHistory ? (*globalHistory ^ pc_mid) : (history ^ pc_mid);
 		}
 		//unsigned result = isGlobalHistory ? *globalHistory : history;
 		//int mask = (1 << historySize) - 1;
@@ -199,27 +199,28 @@ struct TableEntry
 	void update(bool taken)
 	{
 		int mask = (1 << historySize) - 1;
+		unsigned historyInd = 0;
 
 		if (shared == NOT_USING_SHARE)
 		{
-			unsigned historyPtr = isGlobalHistory ? *globalHistory : history;
+			historyInd = isGlobalHistory ? *globalHistory : history;
 		}
 		else if (isGlobalTable && (shared == USING_SHARE_LSB))
 		{
 			uint32_t pc_lsb = pc >> 2;
 			pc_lsb &= mask;
-			unsigned historyPtr = isGlobalHistory ? (*globalHistory ^ pc_lsb) : (history ^ pc_lsb);
+			historyInd = isGlobalHistory ? (*globalHistory ^ pc_lsb) : (history ^ pc_lsb);
 		}
 		else if (isGlobalTable && (shared == USING_SHARE_MID))
 		{
 			uint32_t pc_mid = pc >> 16;
 			pc_mid &= mask;
-			unsigned historyPtr = isGlobalHistory ? (*globalHistory ^ pc_mid) : (history ^ pc_mid);
+			historyInd = isGlobalHistory ? (*globalHistory ^ pc_mid) : (history ^ pc_mid);
 		}
-
-		fsms[historyPtr].update(taken);
-		historyPtr <<= 1;
-		historyPtr += taken ? 1 : 0;
+		unsigned* historyPtr = &historyInd;
+		fsms[*historyPtr].update(taken);
+		*historyPtr <<= 1;
+		*historyPtr += taken ? 1 : 0;
 
 		//unsigned* historyPtr = isGlobalHistory ? globalHistory : &history;
         //fsms[*historyPtr].update(taken);
