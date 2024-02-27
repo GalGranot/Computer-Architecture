@@ -21,6 +21,7 @@ using std::vector;
 =============================================================================*/
 constexpr int MIN_FIELD_SIZE = 1;
 constexpr int MAX_HISTORY_SIZE = 8;
+constexpr int PC_SIZE = 32;
 
 constexpr int STRONGLY_NOT_TAKEN = 0;
 constexpr int WEAKLY_NOT_TAKEN = 1;
@@ -135,12 +136,13 @@ struct TableEntry
 	bool valid;
 	vector<Fsm> fsms;
 	bool isGlobalHistory;
+	unsigned shared;
 	uint32_t tag;
 	uint32_t pc;
 	uint32_t target;
 
 	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize,
-		unsigned* globalHistory, unsigned historySize, int fsmState, bool valid) :
+		unsigned* globalHistory, unsigned historySize, unsigned isGlobalTable, unsigned shared, int fsmState, bool valid) :
 		pc(pc),
 		target(target),
 		history(0),
@@ -149,11 +151,13 @@ struct TableEntry
 		valid(valid),
 		fsms(vector<Fsm>(std::pow(2, historySize), Fsm(fsmState))),
 		isGlobalHistory((globalHistory == nullptr) ? false : true),
+		isGlobalTable(isGlobalTable),
+		shared(shared),
 		tag(calcTagFromPc(pc, btbSize, tagSize)) {}
 
 	
 	TableEntry(uint32_t pc, uint32_t target, unsigned btbSize, unsigned tagSize,
-		unsigned* globalHistory, unsigned historySize, vector<Fsm>& fsms, bool valid) :
+		unsigned* globalHistory, unsigned historySize, unsigned isGlobalTable, unsigned shared, vector<Fsm>& fsms, bool valid) :
 		pc(pc),
 		target(target),
 		history(0),
@@ -162,21 +166,64 @@ struct TableEntry
 		valid(valid),
 		fsms(fsms),
 		isGlobalHistory((globalHistory == nullptr) ? false : true),
+		isGlobalTable(isGlobalTable),
+		shared(shared),
 		tag(calcTagFromPc(pc, btbSize, tagSize)) {}
 
 	unsigned getHistory()
 	{
-		unsigned result = isGlobalHistory ? *globalHistory : history;
 		int mask = (1 << historySize) - 1;
+
+		if (shared == NOT_USING_SHARE)
+		{
+			unsigned result = isGlobalHistory ? *globalHistory : history;
+		}
+		else if (isGlobalTable && (shared == USING_SHARE_LSB))
+		{
+			pc_lsb >>= 2;
+			pc_lsb &= mask;
+			unsigned result = isGlobalHistory ? (*globalHistory ^ pc_lsb) : (history ^ pc_lsb);
+		}
+		else if (isGlobalTable && (shared == USING_SHARE_MID))
+		{
+			pc_mid >>= 16;
+			pc_mid &= mask;
+			unsigned result = isGlobalHistory ? (*globalHistory ^ pc_mid) : (history ^ pc_mid);
+		}
+		//unsigned result = isGlobalHistory ? *globalHistory : history;
+		//int mask = (1 << historySize) - 1;
 		result &= mask;
 		return result;
 	}
 	void update(bool taken)
 	{
-		unsigned* historyPtr = isGlobalHistory ? globalHistory : &history;
-        fsms[*historyPtr].update(taken);
-        *historyPtr <<= 1;
-		*historyPtr += taken ? 1 : 0;
+		int mask = (1 << historySize) - 1;
+
+		if (shared == NOT_USING_SHARE)
+		{
+			unsigned historyPtr = isGlobalHistory ? *globalHistory : history;
+		}
+		else if (isGlobalTable && (shared == USING_SHARE_LSB))
+		{
+			pc_lsb >>= 2;
+			pc_lsb &= mask;
+			unsigned historyPtr = isGlobalHistory ? (*globalHistory ^ pc_lsb) : (history ^ pc_lsb);
+		}
+		else if (isGlobalTable && (shared == USING_SHARE_MID))
+		{
+			pc_mid >>= 16;
+			pc_mid &= mask;
+			unsigned historyPtr = isGlobalHistory ? (*globalHistory ^ pc_mid) : (history ^ pc_mid);
+		}
+
+		fsms[historyPtr].update(taken);
+		historyPtr <<= 1;
+		historyPtr += taken ? 1 : 0;
+
+		//unsigned* historyPtr = isGlobalHistory ? globalHistory : &history;
+        //fsms[*historyPtr].update(taken);
+        //*historyPtr <<= 1;
+		//*historyPtr += taken ? 1 : 0;
 	}
 	bool predict() { return fsms[getHistory()].predict(); }
 	
@@ -228,14 +275,22 @@ struct BranchPredictor
 			globalFsms = vector<Fsm>(std::pow(2, historySize), Fsm(fsmState));
 			//construct entries with global fsm vector
 			entries = vector<TableEntry>(btbSize, TableEntry(DEFAULT_FIELD,
-				DEFAULT_FIELD, btbSize, tagSize, globalHistoryArg, historySize, globalFsms, false));
+				DEFAULT_FIELD, btbSize, tagSize, globalHistoryArg, historySize, isGlobalTable, shared, globalFsms, false));
 		}
 		else
 			{
 				//construct entries with local fsm vector
 				entries = vector<TableEntry>(btbSize, TableEntry(DEFAULT_FIELD,
-					DEFAULT_FIELD, btbSize, tagSize, globalHistoryArg, historySize, fsmState, false));
+					DEFAULT_FIELD, btbSize, tagSize, globalHistoryArg, historySize, isGlobalTable, shared, fsmState, false));
 			}
+
+		// calculate size of BTB:
+		targetSize = PC_SIZE;
+		fsmSize = 2 * std::pow(2, historySize);
+		isGlobalHistFlag = isGlobalHist ? 0 : 1;
+		fsmsSize = isGlobalTable ? fsmSize : fsmSize * btbSize;
+		tableSize = btbSize * (tagSize + targetSize + isGlobalHistFlag * historySize) + (1 - isGlobalHistFlag) * historySize;
+		stats.size = tableSize + fsmsSize;
 	}
 	void print()
 	{
