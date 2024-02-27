@@ -113,11 +113,11 @@ struct Fsm
 	Fsm(int state) : state(state) {}
 	void update(bool taken)
 	{
-		assert((state >= STRONGLY_NOT_TAKEN && state <= STRONGLY_TAKEN) && "state out of bounds");
-		if(taken)
-			state = std::min(STRONGLY_TAKEN, state + 1);
-		else
-			state = std::max(STRONGLY_NOT_TAKEN, state - 1);
+		//assert((state >= STRONGLY_NOT_TAKEN && state <= STRONGLY_TAKEN) && "state out of bounds");
+		//if(taken)
+		//	state = std::min(STRONGLY_TAKEN, state + 1);
+		//else
+		//	state = std::max(STRONGLY_NOT_TAKEN, state - 1);
 
 		if(taken && state != STRONGLY_TAKEN)
 			state++;
