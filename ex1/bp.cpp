@@ -14,6 +14,7 @@
 #include <cassert>
 
 #include <typeinfo>
+#include <iomanip> // For std::setw
 
 using std::cout;
 using std::endl;
@@ -99,8 +100,8 @@ bool validateArgs(unsigned btbSize, unsigned historySize, unsigned tagSize, unsi
 		historySize < MIN_FIELD_SIZE ||
 		historySize > MAX_HISTORY_SIZE ||
 		fsmState < STRONGLY_NOT_TAKEN ||
-		fsmState > STRONGLY_TAKEN ||
-		(!isGlobalTable && Shared != NOT_USING_SHARE)
+		fsmState > STRONGLY_TAKEN 
+		//(!isGlobalTable && Shared != NOT_USING_SHARE)
 		)
 		return false;
 	return true;
@@ -117,15 +118,15 @@ struct Fsm
 	void update(bool taken)
 	{
 		//assert((state >= STRONGLY_NOT_TAKEN && state <= STRONGLY_TAKEN) && "state out of bounds");
-		if(taken)
-			state = std::min(STRONGLY_TAKEN, state + 1);
-		else
-			state = std::max(STRONGLY_NOT_TAKEN, state - 1);
+		//if(taken)
+		//	state = std::min(STRONGLY_TAKEN, state + 1);
+		//else
+		//	state = std::max(STRONGLY_NOT_TAKEN, state - 1);
 
-		/*if (taken && state != STRONGLY_TAKEN)
+		if (taken && state != STRONGLY_TAKEN)
 			state++;
 		else if (!taken && state != STRONGLY_NOT_TAKEN)
-			state--;*/
+			state--;
 		//assert((state >= STRONGLY_NOT_TAKEN && state <= STRONGLY_TAKEN) && "state out of bounds");
 	}
 	bool predict() { 
@@ -183,7 +184,7 @@ struct TableEntry
 	{
 		int mask = (1 << historySize) - 1;
 		unsigned result = 0;
-		if (shared == NOT_USING_SHARE)
+		if ((!isGlobalTable) || (shared == NOT_USING_SHARE))
 		{
 			//cout << "not shared" << endl;
 			result = isGlobalHistory ? *globalHistory : history;
@@ -209,30 +210,6 @@ struct TableEntry
 	}
 	void update(bool taken)
 	{
-		/*int mask = (1 << historySize) - 1;
-		unsigned historyInd = 0;
-		unsigned* historyPtr = isGlobalHistory ? globalHistory : &history;*/
-
-		/*if (shared == NOT_USING_SHARE)
-		{
-			historyInd = isGlobalHistory ? *globalHistory : history;
-		}
-		else if (isGlobalTable && (shared == USING_SHARE_LSB))
-		{
-			uint32_t pc_lsb = pc >> 2;
-			pc_lsb &= mask;
-			historyInd = isGlobalHistory ? (*globalHistory ^ pc_lsb) : (history ^ pc_lsb);
-		}
-		else if (isGlobalTable && (shared == USING_SHARE_MID))
-		{
-			uint32_t pc_mid = pc >> 16;
-			pc_mid &= mask;
-			historyInd = isGlobalHistory ? (*globalHistory ^ pc_mid) : (history ^ pc_mid);
-		}
-		fsms[historyInd].update(taken);
-		*historyPtr <<= 1;
-		*historyPtr += taken ? 1 : 0;*/
-
 		unsigned fsmInd = getHistory();
 		//cout << "update:" << endl;
 		//cout << fsmInd << endl;
@@ -358,13 +335,36 @@ struct BranchPredictor
 	//	cout << "\n\n========= End of entries =========\n";
 	//}
 
+	//void printBTB() {
+	//	std::cout << "BTB Table:\n";
+	//	std::cout << " | Valid | Tag | Target Address | History | FSM State |\n";
+	//	std::cout << " |-------|-----|----------------|---------|-----------|\n";
+	//	for (const auto& entry : entries) {
+	//		std::cout << " | " << (entry.valid ? "true " : "false") << "  | ";
+	//		std::cout << std::hex << entry.tag << " | ";
+	//		std::cout << std::hex << entry.target << " | ";
+	//		if(isGlobalHist)
+	//		{
+	//			std::cout << std::dec << *(entry.globalHistory) << " | ";
+	//		}
+	//		else {
+	//			std::cout << std::dec << entry.history << " | ";
+	//		}
+	//		for (const auto& fsm : entry.fsms) {
+	//			std::cout << fsm.state << " "; // Assuming state is an int
+	//		}
+	//		std::cout << std::endl;
+	//	}
+	//}
+
 	TableEntry& findEntryByPc(uint32_t pc) { return entries[calcTableIndexFromPc(pc, btbSize)]; }
 
 	bool predict(uint32_t pc, uint32_t* dst)
 	{
 		TableEntry& te = findEntryByPc(pc);
 		uint32_t newTag = calcTagFromPc(pc, btbSize, tagSize);
-		bool canPredict = (te.valid && te.tag == newTag);
+		bool availableTag = (tagSize == 0) || (te.tag == newTag);
+		bool canPredict = (te.valid && availableTag);
 		bool taken = canPredict ? te.predict() : false;
 		//cout << "can Predict " << canPredict << endl;
 		//cout << "taken " << taken << " prediction " << te.predict() << endl;
@@ -372,10 +372,10 @@ struct BranchPredictor
 		return taken;
 	}
 
-	void updateStats(bool predictionCorrect)
+	void updateStats(bool doFlush)
 	{
 		stats.br_num++;
-		if (!predictionCorrect)
+		if (doFlush)
 			stats.flush_num++;
 	}
 
@@ -385,7 +385,9 @@ struct BranchPredictor
 		uint32_t newTag = calcTagFromPc(pc, btbSize, tagSize);
 		//cout << "dst " << std::hex << pred_dst << " pc + 4 = " << std::hex << pc + 4 << endl; // FIXME remove
 
-		if (!te.valid || (te.valid && te.tag != newTag)) //new or indistinguishable jump - initialize it
+		bool indistTag = (tagSize == 0) || (te.tag != newTag);
+
+		if (!te.valid || (te.valid && indistTag)) //new or indistinguishable jump - initialize it
 		{
 			if (!isGlobalTable)
 			{ // if local table - init fsms
@@ -406,20 +408,21 @@ struct BranchPredictor
 
 		bool prediction = te.predict();
 		//cout << "prediction " << prediction << " true " << taken << endl;
-		bool predictionCorrect = (taken == prediction) || (pred_dst == targetPc);
+		bool dontFlush = (pred_dst == targetPc) || ((taken == false) && (prediction == false));
 
+		bool flush1 = (taken == true) && (pred_dst != targetPc);
+		bool flush2 = (taken == false) && (pred_dst != pc + 4);
+		bool flush = flush1 || flush2;
+		
+		bool availableTag = (tagSize == 0) || (te.tag == newTag);
 
-		if (!predictionCorrect) {
-			//cout << "prediction " << te.predict() << " truth " << taken << endl;
-		}
-
-		if (te.valid && te.tag == newTag)
+		if (te.valid && availableTag)
 		{
 			//cout << "update entry at index " << calcTableIndexFromPc(pc, btbSize) << endl; // FIXME remove
 			te.update(taken);
 		}
 
-		updateStats(predictionCorrect);
+		updateStats(flush);
 		//cout << "pred correct = " << predictionCorrect << endl;
 	}
 };
@@ -432,11 +435,14 @@ BranchPredictor* bp;
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
 	bool isGlobalHist, bool isGlobalTable, int Shared)
 {
-	if (!validateArgs(btbSize, historySize, tagSize, fsmState,
+	/*if (!validateArgs(btbSize, historySize, tagSize, fsmState,
 		isGlobalHist, isGlobalTable, Shared))
 	{
 		fprintf(stderr, "invalid arguments\n");
 		return INVALID_ARGS;
+	}*/
+	if (!isGlobalTable && Shared != NOT_USING_SHARE) {
+		Shared = NOT_USING_SHARE;
 	}
 	bp = new BranchPredictor(btbSize, historySize, tagSize, fsmState, isGlobalHist, isGlobalTable, Shared);
 	//cout << "================================== beginning ==================================" << endl;
@@ -452,6 +458,7 @@ bool BP_predict(uint32_t pc, uint32_t* dst)
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst)
 {
 	bp->update(pc, targetPc, taken, pred_dst);
+	//bp->printBTB();
 	//bp->print(); 
 }
 
