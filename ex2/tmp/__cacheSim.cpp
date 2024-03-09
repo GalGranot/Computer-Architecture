@@ -11,44 +11,70 @@ using std::cerr;
 using std::ifstream;
 using std::stringstream;
 
-/*=============================================================================
-* classes
-=============================================================================*/
-struct AccessData
-{
-	int tL1;
-	int tL2;
-	int tMem;
-	int l1Accesses;
-	int l1Hits;
-	int l2Accesses;
-	int l2Hits;
-	int totalAccesses;
-};
+#include <vector>
+using std::vector;
+
+constexpr int FULLY_ASSOCIATIVE = -1;
+constexpr int NOT_ACCESSED = -1;
 
 struct Entry
 {
-	bool valid;
-	uint32_t tag;
-	int lastAccessed;
+    uint32_t tag;
+    bool valid;
+    bool dirty;
+    int lastAccessed;
+
+    Entry() : tag(0), valid(false), dirty(false), lastAccessed(NOT_ACCESSED) {}
+    Entry(uint32_t tag, int accessNumber) : tag(tag), valid(true), dirty(false), lastAccessed(accessNumber) {}
+};
+
+//
+
+struct AccessData
+{
+    int tL1;
+    int tL2;
+    int tMem;
+    int l1Miss;
+    int l2Miss;
+    int totalAccesses;
 };
 
 struct Cache
 {
-	int associativity; 
+    vector<Entry> entries;
+    AccessData data;
+    int cacheSize;
+    int blockSize;
+    int assoc;
+    bool writeAllocate;
+    int accessNumber;
+
+    Entry& findEntryByAddress(uint32_t address)
+    {
+
+    }
+	Entry& lruEntry()
+	{
+		
+	}
+
 };
 
 struct Memory
 {
-	Cache l1;
-	Cache l2;
-	AccessData data;
+    Cache l1;
+    Cache l2;
+    Entry& findEntryByAddress(uint32_t address)
+    {
+
+    }
+    void handleAccess(bool readWrite, uint32_t address)
+    {
+
+    }
 };
 
-
-/*=============================================================================
-* main
-=============================================================================*/
 int main(int argc, char **argv) {
 
 	if (argc < 19) {
@@ -128,6 +154,8 @@ int main(int argc, char **argv) {
 	double L1MissRate;
 	double L2MissRate;
 	double avgAccTime;
+
+	//your code here
 
 	printf("L1miss=%.03f ", L1MissRate);
 	printf("L2miss=%.03f ", L2MissRate);

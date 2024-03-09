@@ -15,8 +15,6 @@ struct Entry
     Entry(uint32_t tag, int accessNumber) : tag(tag), valid(true), dirty(false), lastAccessed(accessNumber) {}
 };
 
-//
-
 struct AccessData
 {
     int tL1;
@@ -25,6 +23,9 @@ struct AccessData
     int l1Miss;
     int l2Miss;
     int totalAccesses;
+
+    AccessData(int tL1, int tL2, int tMem) : tL1(tL1), tL2(tL2), tMem(tMem),
+        l1Miss(0), l2Miss(0), totalAccesses(0) {}
 };
 
 struct Cache
