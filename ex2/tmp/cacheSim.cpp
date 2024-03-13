@@ -26,6 +26,17 @@ constexpr bool WRITE = true;
 * z = 32 - y - x tag bits
 */
 
+void printBinary(uint32_t n)
+{
+	for(int i = 31; i >= 0; i--)
+	{
+		int digit = (n >> i) & 1;
+		cout << digit;
+		if(i % 4 == 0)
+			cout << " ";
+	}
+	cout << endl;
+}
 
 struct AccessData
 {
@@ -35,11 +46,39 @@ struct AccessData
     int l1Miss;
     int l2Miss;
     int totalAccesses;
+
+	AccessData(int tL1, int tL2, int tMem) : 
+	tL1(tL1), tL2(tL2), tMem(tMem), l1Miss(0), l2Miss(0), totalAccesses(0) {}
 };
 
 struct Address
 {
-	Address(uint32_t address);
+	uint32_t address;
+	uint32_t offset;
+	uint32_t set;
+	uint32_t tag;
+	Address(uint32_t address, unsigned offsetSize, unsigned setSize, unsigned tagSize) : address(address)
+	{
+		int offsetMask = (1 << offsetSize) - 1;
+		offset = address & offsetMask;
+		address >>= offsetSize;
+		if(setSize > 0)
+		{
+			int setMask = (1 << setSize) - 1;
+			set = address & setMask;
+			address >>= setSize;
+		}
+		else
+			set = 0;
+		int tagMask = (1 << tagSize) - 1;
+		tag = address & tagMask;
+	}
+	void print()
+	{
+		cout ;
+		cout << std::hex << "address " << "0x" << address << endl << std::dec;
+		cout << 
+	}
 };
 
 struct Entry
@@ -48,7 +87,6 @@ struct Entry
     bool valid;
     bool dirty;
     int lastAccessed;
-
     Entry() : tag(0), valid(false), dirty(false), lastAccessed(NOT_ACCESSED) {}
     Entry(uint32_t tag, int accessNumber) : tag(tag), valid(true), dirty(false), lastAccessed(accessNumber) {}
 };
@@ -66,7 +104,7 @@ struct Cache
     int accessNumber;
 
 	Cache(int cacheSize, int blockSize, int assoc) :
-		cacheSize(cacheSize), blockSize(blockSize), assoc(assoc)
+	cacheSize(cacheSize), blockSize(blockSize), assoc(assoc)
 	{
 		unsigned lineSize = blockSize;
 		unsigned lineNumber = cacheSize - lineSize;
@@ -75,13 +113,14 @@ struct Cache
 		tagSize = 32 - offsetSize - setSize;
 	}
 	
-    Entry& findEntryByAddress(uint32_t address)
+    Entry& findEntryByAddress(uint32_t _address)
     {
+		Address address = Address(_address, offsetSize, setSize, tagSize);
 		if(assoc == FULLY_ASSOCIATIVE)
 		{
 			for(Entry& entry : entries)
 			{
-				if(entry.tag == getTag(address, tagSize) && entry.valid)
+				if(entry.tag == address.tag && entry.valid)
 					return entry;
 			}
 		}
@@ -90,24 +129,23 @@ struct Cache
 			unsigned partition = entries.size() / pow(2, assoc);
 			for(int i = 0; i < std::pow(2, assoc); i++)
 			{
-				unsigned addressInCache = i * partition + getSet(address, setSize, offsetSize);
-				if(entries[addressInCache].tag == getTag(address, setSize, offsetSize))
+				unsigned addressInCache = i * partition + pow(2, address.set); //TODO make sure pow() is necessary here
+				if(entries[addressInCache].tag == address.tag)
 					return entries[addressInCache];
 			}
 		} 
-		//not found
 		Entry notFoundEntry = Entry();
 		return notFoundEntry;
     }
 
-	vector<unsigned>& entryIndexOptions(uint32_t address)
-	{
-		vector<unsigned> options;
-		if(assoc == FULLY_ASSOCIATIVE)
-		{
-			for(int i = 0; i < entries.size(); i++)
-		}
-	}
+	// vector<unsigned>& entryIndexOptions(uint32_t address)
+	// {
+	// 	vector<unsigned> options;
+	// 	if(assoc == FULLY_ASSOCIATIVE)
+	// 	{
+	// 		for(int i = 0; i < entries.size(); i++)
+	// 	}
+	// }
 
 	void placeEntry(uint32_t address)
 	{
@@ -217,7 +255,15 @@ struct Memory
     }
 };
 
-int main(int argc, char **argv) {
+int main()
+{
+	uint32_t address = 0x1234;
+	printBinary(address);
+	// Address add = Address(address);
+
+}
+
+int _main(int argc, char **argv) {
 
 	if (argc < 19) {
 		cerr << "Not enough arguments" << endl;
