@@ -31,6 +31,10 @@ using std::vector;
 #define READ_MISS 1
 #define WRITE_HIT 2
 #define WRITE_MISS 3
+#define READ_INSERT 4
+#define WRITE_INSERT 5
+
+#define debug 1
 
 /*
 * equations for calculating bit sizes:
@@ -105,7 +109,7 @@ struct Entry
     int lastAccessed;
     CacheDim dim;
 
-    Entry() : address(0xFFFFFFFF), valid(false), dirty(false), lastAccessed(NOT_ACCESSED), dim(CacheDim(INVALID, INVALID, INVALID, INVALID, INVALID)) {}
+    Entry() : address(0x0), valid(false), dirty(false), lastAccessed(NOT_ACCESSED), dim(CacheDim(INVALID, INVALID, INVALID, INVALID, INVALID)) {}
     Entry(uint32_t address, int accessNumber, CacheDim dim) :
     address(address), valid(true), dirty(false), lastAccessed(accessNumber), dim(dim) {}
 
@@ -209,40 +213,121 @@ struct Cache
                 lruIndex = (entries[lruIndex].lastAccessed > entries[positionInTable].lastAccessed) ? positionInTable : lruIndex;
             }
         }
+        if(debug) cout << "evicted address 0x" << std::hex << entries[lruIndex].address << "at index " << std::dec << lruIndex << endl;
         entries[lruIndex] = e;
+    }
+
+    int handleRead(Entry& e)
+    {
+        //search table/sets for tag. if exist, return hit - else evict and return miss
+        int firstInvalidIndex = -1;
+        if(dim.assoc == FULLY_ASSOCIATIVE)
+        {
+            for(int i = 0; i < entries.size(); i++)
+            {
+                if(entries[i].tag() == e.tag())
+                {
+                    if(debug) cout << "READ HIT: found address 0x" << std::hex << e.address << " at index " << std::dec << i << endl;
+                    return READ_HIT;
+                }
+                if(firstInvalidIndex == -1 && !entries[i].valid)
+                    firstInvalidIndex = i;
+            }
+        }
+        else
+        {
+            int offset = std::pow(2, dim.cacheSize - dim.assoc);
+            int positionInSet = e.set();
+            for(int i = 0; i < std::pow(2, dim.assoc); i++)
+            {
+                int positionInTable = i * offset + positionInSet;
+                Entry& te = entries[positionInTable];
+                if(te.tag() == e.tag())
+                {
+                    if(debug) cout << "READ HIT: found address 0x" << std::hex << e.address << " at index " << std::dec << positionInTable << endl;
+                    return READ_HIT;
+                }
+                if(firstInvalidIndex == -1 && !te.valid)
+                    firstInvalidIndex = positionInTable;
+            }
+        }
+        if(firstInvalidIndex != -1) //found empty place for entry
+        {
+            entries[firstInvalidIndex] = e;
+            if(debug) cout << "READ INSERT: entered address 0x" << std::hex << e.address << " at index " << std::dec << firstInvalidIndex << endl;
+            return READ_INSERT;
+        }
+        evictAndReplace(e);
+        return READ_MISS;
+    }
+
+    int handleWrite(Entry& e)
+    {
+        int firstInvalidIndex = -1;
+        if(dim.assoc == FULLY_ASSOCIATIVE)
+        {
+            for(int i = 0; i < entries.size(); i++)
+            {
+                if(entries[i].tag() == e.tag())
+                {
+                    if(debug) cout << "WRITE HIT: found address 0x" << std::hex << e.address << " at index " << std::dec << i << endl;
+                    return WRITE_HIT;
+                }
+                if(firstInvalidIndex == -1 && !entries[i].valid)
+                    firstInvalidIndex = i;
+            }
+        }
+        if(firstInvalidIndex != -1) //found empty place for entry
+        {
+            entries[firstInvalidIndex] = e;
+            if(debug) cout << "READ INSERT: entered address 0x" << std::hex << e.address << " at index " << std::dec << firstInvalidIndex << endl;
+            return WRITE_INSERT;
+        }
+        evictAndReplace(e);
+        return READ_MISS;
     }
 
     int handleRequest(uint32_t address, bool readWrite)
     {
-        Entry e = Entry(address, accessNumber, dim);
-        vector<int> positionsForEntry = placeEntry(e);
-        if(!positionsForEntry.empty()) //read/write hit!
-        {
-            for(int i : positionsForEntry)
-            {
-                if(!entries[i].valid)
-                    entries[i] = e;
-            }
-            return (readWrite == READ) ? READ_HIT : WRITE_HIT;
-        }
-        evictAndReplace(e);
-        return (readWrite == READ) ? READ_MISS : WRITE_MISS;
+        Entry e(address, accessNumber++, dim);
+        if(readWrite == READ)
+            return handleRead(e);
+        else
+            return handleWrite(e);
+        // Entry e = Entry(address, accessNumber++, dim);
+        // vector<int> positionsForEntry = placeEntry(e);
+        // if(!positionsForEntry.empty()) //read/write hit!
+        // {
+        //     for(int i : positionsForEntry)
+        //     {
+        //         if(!entries[i].valid)
+        //         {
+        //             entries[i] = e;
+        //             break;
+        //         }
+        //     }
+        //     if(debug) cout << ((readWrite == READ) ? "read hit " : "write hit ") << "on address 0x" << std::hex << address << endl;
+        //     return (readWrite == READ) ? READ_HIT : WRITE_HIT;
+        // }
+        // if(debug) cout << ((readWrite == READ) ? "read miss " : "write miss ") << " on address 0x" << std::hex << address << endl;
+        // evictAndReplace(e);
+        // return (readWrite == READ) ? READ_MISS : WRITE_MISS;
     }
 
     void print()
     {
-        cout << "==================== printing cache ====================" << endl;
+        cout << "\n==================== printing cache ====================" << endl;
         int i = 0;
         for(Entry& e : entries)
         {
-            cout << "=== printing entry " << i++ << " ===" << endl;
+            cout << "=== entry " << i++ << " ===" << endl;
             e.print();
         }
         cout << "======== cache parameters ========" << endl;
         cout << "accessNumber " << accessNumber << endl;
         cout << "cacheSize " << dim.cacheSize << endl;
         cout << "assoc " << dim.assoc << endl;
-        cout << "==================== endof cache ====================" << endl;
+        cout << "==================== endof cache ====================\n" << endl;
     }
 };
 
@@ -312,11 +397,12 @@ struct Memory
 
 int main()
 {
-    Cache c(0, 3, FULLY_ASSOCIATIVE);
+    Cache c(0, 3, 1);
     c.print();
-    for(int i = 0x0; i < 0x4; i++)
+    for(int i = 0; i < 12; i++)
     {
-        c.handleRequest(i, READ);
+        //cout << "Reading at 0x" << std::hex << 0xFFFFFFFF - 0x11111111*(i%4) << endl;
+        c.handleRequest(0xFFFFFFFF - 0x11111111*(i%4), READ);
     }
     c.print();
 }
