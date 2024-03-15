@@ -163,7 +163,10 @@ struct Cache
             for(Line& tl : lines)
             {
                 if(tl.valid && tl.tag == l.tag)
+                {
+                    tl.lastAccessed = accessNumber++; //this is for read/write hits only
                     return true;
+                }
             }
             return false;
         }
@@ -222,78 +225,88 @@ struct Cache
 /*=============================================================================
 * Memory
 =============================================================================*/
-// struct Memory
-// {
-//     Cache l1;
-//     Cache l2;
-//     AccessData data;
-//     bool writeAllocate;
+struct Memory
+{
+    Cache l1;
+    Cache l2;
+    AccessData data;
+    bool writeAllocate;
 
-//     void handleRequest(uint32_t address, int readWrite)
-//     {
-//         int l1Result = l1.handleRequest(address, readWrite);
-//         data.update(l1Result, L1_CACHE);
-//         if(l1Result == READ_HIT)
-//         {
-//             return;
-//         }
-//         else if(l1Result == READ_MISS)
-//         {
-//             //search for block in l2
-//             //bring block to l1. if evicted dirty, write evicted block to l2
-//             int insertResult = l1.insert(address);
-//             if(insertResult == EVICTED_DIRTY)
-//                 l2.insert(address); // TODO split up to different functions
-//         }
-//         else if(l1Result == WRITE_HIT)
-//         {
-//             if(l1.writePolicy == WRITE_BACK)
-//                 l1.markDirty(address);
-//             else if(l1.writePolicy == WRITE_THRU)
-//                 l2.insertOrUpdate(address);
-//             return;
-//         }
-//         else if(l1Result == WRITE_MISS)
-//         {
-//             if(writeAllocate)
-//             {
-//                 int updateResult = l1.insertOrUpdate(address);
-//                 if(updateResult == EVICTED_DIRTY)
-//                     l2.insertOrUpdate(address);
-//             }
-//         }
+    Memory(int tL1, int tL2, int tMem, bool writeAllocate,
+    int assoc1, int offsetSize1, int setSize1, int tagSize1, int cacheSize1, int blockSize1,
+    int assoc2, int offsetSize2, int setSize2, int tagSize2, int cacheSize2, int blockSize2) :
+    data(AccessData(tL1, tL2, tMem)),
+    l1(Cache(assoc1, offsetSize1, setSize1, tagSize1, cacheSize1, blockSize1)),
+    l2(Cache(assoc2, offsetSize2, setSize2, tagSize2, cacheSize2, blockSize2)),
+    writeAllocate(writeAllocate) {}
 
-//         int l2Result = l2.handleRequest(address, readWrite);
-//         data.update(l2Result, L2_CACHE);
-//         if(l2Result == READ_HIT)
-//         {
-//             return;
-//         }
-//         else if(l2Result == READ_MISS)
-//         {
-//             int updateResult = l2.insertOrUpdate(address);
-//             if(updateResult == EVICTED_DIRTY)
-//                 l1.evict(address);
-//         }
-//         else if(l2Result == WRITE_HIT)
-//         {
-//             if(l2.writePolicy == WRITE_BACK)
-//                 l2.markDirty(address);
-//             else if(l2.writePolicy == WRITE_THRU)
-//                 ; //actually writing to main memory
-//             return;
-//         }
-//         else if(l2Result == WRITE_MISS)
-//         {
-//             if(writeAllocate)
-//             {
-//                 int updateResult = l2.insertOrUpdate(address);
-//                 if(updateResult == EVICTED_DIRTY)
-//                     ; //actually writing dirty block to main memory
-//             }
-//         }
-//     }
-// };
+    void handleRequest(uint32_t address, int readWrite)
+    {
+        int l1Result = l1.handleRequest(address, readWrite);
+        data.update(l1Result, L1_CACHE);
+        if(l1Result == READ_HIT)
+        {
+            if(debug) cout << "l1 read hit on address 0x" << std::hex << address << std::dec << endl;
+            return;
+        }
+        else if(l1Result == READ_MISS)
+        {
+            if(debug) cout << "l1 read miss on address 0x" << std::hex << address << std::dec << endl;
+            //search for block in l2
+            //bring block to l1. if evicted dirty, write evicted block to l2
+            int insertResult = l1.insert(address);
+            if(insertResult == EVICTED_DIRTY)
+                l2.insert(address); // TODO split up to different functions
+        }
+        else if(l1Result == WRITE_HIT)
+        {
+            if(l1.writePolicy == WRITE_BACK)
+                l1.markDirty(address);
+            else if(l1.writePolicy == WRITE_THRU)
+                l2.insertOrUpdate(address);
+            return;
+        }
+        // else if(l1Result == WRITE_MISS)
+        // {
+        //     if(writeAllocate)
+        //     {
+        //         int updateResult = l1.insertOrUpdate(address);
+        //         if(updateResult == EVICTED_DIRTY)
+        //             l2.insertOrUpdate(address);
+        //     }
+        // }
+
+        // int l2Result = l2.handleRequest(address, readWrite);
+        // data.update(l2Result, L2_CACHE);
+        // if(l2Result == READ_HIT)
+        // {
+        //     return;
+        // }
+        // else if(l2Result == READ_MISS)
+        // {
+        //     int updateResult = l2.insertOrUpdate(address);
+        //     if(updateResult == EVICTED_DIRTY)
+        //         l1.evict(address);
+        // }
+        // else if(l2Result == WRITE_HIT)
+        // {
+        //     if(l2.writePolicy == WRITE_BACK)
+        //         l2.markDirty(address);
+        //     else if(l2.writePolicy == WRITE_THRU)
+        //         ; //actually writing to main memory
+        //     return;
+        // }
+        // else if(l2Result == WRITE_MISS)
+        // {
+        //     if(writeAllocate)
+        //     {
+        //         int updateResult = l2.insertOrUpdate(address);
+        //         if(updateResult == EVICTED_DIRTY)
+        //             ; //actually writing dirty block to main memory
+        //     }
+        // }
+    }
+};
 
 /*=============================================================================
 * Main
@@ -307,14 +320,56 @@ int main()
     int cacheSize = 2;
     int blockSize = 0;
 
-    Cache c(assoc, offsetSize, setSize, tagSize, cacheSize, blockSize);
-    uint32_t i = 0xFFFF;
-    for(int j = 0; j < c.lines.size(); j++)
-        c.insert(i + 0x1000*j);
-    c.print();
-    c.insert(i);
-    c.print();
+    Memory m(0,0,0,false,FULLY_ASSOCIATIVE,offsetSize, setSize, tagSize, cacheSize, blockSize,FULLY_ASSOCIATIVE,offsetSize, setSize, tagSize, cacheSize*2, blockSize);
+    uint32_t x;
+     m.l1.print();
+    x = 0x00000000;
+    m.handleRequest(x, READ);
+    m.l1.print();
+    // x = 0x00000004;
+    // m.handleRequest(x, READ);
+    // x = 0x00100000;
+    // m.handleRequest(x, READ);
+    // x = 0x00000000;
+    // m.handleRequest(x, READ);
+    // x = 0x0000000C;
+    // m.handleRequest(x, READ);
+    // x = 0x00000010;
+    // m.handleRequest(x, READ);
+    // x = 0x0000001C;
+    // m.handleRequest(x, READ);
+    // x = 0x00000020;
+    // m.handleRequest(x, READ);
+    // x = 0x0000002C;
+    // m.handleRequest(x, READ);
+    // x = 0x00000030;
+    // m.handleRequest(x, READ);
+    // x = 0x0000003C;
+    // m.handleRequest(x, READ);
+    // x = 0x00000040;
+    // m.handleRequest(x, READ);
+    // x = 0x00000008;
+    // m.handleRequest(x, READ);
+    // x = 0x00000044;
+    // m.handleRequest(x, READ);
 }
+
+//./cacheSim example1_trace --mem-cyc 100 --bsize 3 --wr-alloc 1 --l1-size 4 --l1-assoc 1 --l1-cyc 1 --l2-size 6 --l2-assoc 0 --l2-cyc 5
+// r 0x00000000
+// w 0x00000004
+// r 0x00100000
+// w 0x00000000
+// r 0x0000000C
+// r 0x00000010
+// r 0x0000001C
+// r 0x00000020
+// r 0x0000002C
+// r 0x00000030
+// r 0x0000003C
+// r 0x00000040
+// r 0x00000008
+// w 0x00000044
+
 
 // int main(int argc, char **argv) {
 
