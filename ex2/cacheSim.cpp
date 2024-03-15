@@ -1,14 +1,11 @@
 /*=============================================================================
-* includes, usings, defines
+* include, using, define
 =============================================================================*/
-
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <sstream>
-
 #include <vector>
-#include <cassert>
 
 using std::FILE;
 using std::string;
@@ -20,45 +17,30 @@ using std::stringstream;
 
 using std::vector;
 
-#define NOT_FOUND -1
-
-#define NOT_ACCESSED -1
-
-#define FULLY_ASSOCIATIVE -1
-
 #define READ 0
 #define WRITE 1
 
+#define INVALID_RESULT -1
 #define READ_HIT 0
 #define READ_MISS 1
-#define READ_INSERT 2
-#define WRITE_HIT 3
-#define WRITE_MISS 4
-#define WRITE_INSERT 5
-
-#define WRITE_BACK 0
-#define WRITE_THRU 1
-
-#define NO_EVICT 0
-#define EVICTED 1
-#define EVICTED_DIRTY 2
+#define READ_MISS_INSERT_INVALID 2
+#define READ_MISS_EVICT_CLEAN 3
+#define READ_MISS_EVICT_DIRTY 4
+#define WRITE_HIT 5
+#define WRITE_MISS 6
+#define WRITE_MISS_NO_ALLOC 7
+#define WRITE_MISS_INSERT_INVALID 8
+#define WRITE_MISS_EVICT_CLEAN 9
+#define WRITE_MISS_EVICT_DIRTY 10
 
 #define L1_CACHE 1
 #define L2_CACHE 2
 
-#define debug 1
+#define NOT_ACCESSED -1
 
 /*=============================================================================
-* global functions & variables
+* global functions
 =============================================================================*/
-uint32_t getTag(uint32_t address, int offsetSize, int setSize, int tagSize)
-{
-    uint32_t _address = address;
-    _address >>= offsetSize + setSize;
-    int mask = (1 << tagSize) - 1;
-    return _address & mask;
-}
-
 void printBinary(uint32_t n)
 {
 	for(int i = 31; i >= 0; i--)
@@ -76,49 +58,83 @@ void printBinary(uint32_t n)
 =============================================================================*/
 struct AccessData
 {
-    int tL1;
+	int tL1;
     int tL2;
     int tMem;
     int l1Miss;
+	int l1Hit;
     int l2Miss;
+	int l2Hit;
     int accesses;
     AccessData(int tL1, int tL2, int tMem) : 
-	tL1(tL1), tL2(tL2), tMem(tMem), l1Miss(0), l2Miss(0), accesses(0) {}
+	tL1(tL1), tL2(tL2), tMem(tMem), l1Miss(0), l2Miss(0), l1Hit(0), l2Hit(0), accesses(0) {}
 
     void update(int result, int cache)
     {
         accesses++;
         if(result == READ_MISS || result == WRITE_MISS)
-        {
             (cache == L1_CACHE) ? l1Miss++ : l2Miss++;
-        }
+		else
+			(cache == L1_CACHE) ? l1Hit++ : l2Hit++;
     }
+
+	double missRate(int cache)
+	{
+		double result;
+		if(cache == L1_CACHE)
+			result = l1Miss / (l1Miss + l1Hit);
+		else if(cache == L2_CACHE)
+			result = l2Miss / (l2Miss + l2Hit);
+		else
+			result = ((l1Hit + l1Miss) * tL1 + (l2Hit + l2Miss) * tL2 + l2Miss * tMem) / accesses;
+		return result;
+	}
 };
+
+/*=============================================================================
+* Dimension Structs
+=============================================================================*/
+struct AddrDim
+{
+	int offsetSize;
+	int setSize;
+	int tagSize;
+	AddrDim(int offsetSize, int setSize, int tagSize) : offsetSize(offsetSize), setSize(setSize), tagSize(tagSize) {}
+};
+
+struct CacheDim
+{
+	int cacheSize;
+    int blockSize;
+	int assoc;
+	int lineNumber;
+	CacheDim(int cacheSize, int blockSize, int assoc) : cacheSize(cacheSize), blockSize(blockSize), assoc(assoc) {}
+}
 
 /*=============================================================================
 * Line
 =============================================================================*/
 struct Line
 {
-    uint32_t address;
-    uint32_t tag;
-    uint32_t set;
-    bool valid;
-    bool dirty;
-    int lastAccessed;
-    Line() : valid(false), lastAccessed(NOT_ACCESSED) {}
-    Line(uint32_t address, int accessNumber, int offsetSize, int setSize, int tagSize) : address(address), valid(true), lastAccessed(accessNumber), dirty(false)
-    {
+	uint32_t address;
+	uint32_t tag;
+	uint32_t set;
+	bool valid;
+	bool dirty;
+	int lastAccessed;
+	Line() : valid(false), lastAccessed(NOT_ACCESSED) {}
+	Line(uint32_t address, AddrDim d, int accessNumber) : address(address), valid(true), dirty(false), lastAccessed(accessNumber)
+	{
         uint32_t _address = address;
-        _address >>= offsetSize;
-        int mask = (1 << setSize) - 1;
+        _address >>= d.offsetSize;
+        int mask = (1 << d.setSize) - 1;
         set = _address & mask;
-        _address >>= setSize;
-        mask = (1 << tagSize) - 1;
+        _address >>= d.setSize;
+        mask = (1 << d.tagSize) - 1;
         tag = _address & mask;
-    }
-    Line(uint32_t address, uint32_t tag) : address(address), tag(tag), valid(valid) {} //don't use this
-    void print()
+	}
+
+	void print()
 	{
         cout << "address "; printBinary(address);
         cout << "set "; printBinary(set);
@@ -134,92 +150,29 @@ struct Line
 =============================================================================*/
 struct Cache
 {
-    int assoc;
-    int offsetSize;
-    int setSize;
-    int tagSize;
-    int cacheSize;
-    int blockSize;
-    int accessNumber;
-    vector<Line> lines;
+	vector<Line> lines;
+	CacheDim cDim;
+	AddrDim aDim;
+	Cache(CacheDim cDim, AddrDim aDim) : cDim(cDim), aDim(aDim)
+	{
+		int lineNumber = cDim.cacheSize - aDim.offsetSize;
+		cDim.lineNumber = lineNumber;
+		lines = vector<Line>(std::pow(2, cDim.cacheSize - aDim.offsetSize));
+	}
 
-    Cache(int assoc, int offsetSize, int setSize, int tagSize, int cacheSize, int blockSize) : assoc(assoc), offsetSize(offsetSize), setSize(setSize), tagSize(tagSize), accessNumber(0), cacheSize(cacheSize), blockSize(blockSize)
-    {
-        lines = vector<Line>(std::pow(2, cacheSize - blockSize), Line());
-    }
-
-    int handleRequest(uint32_t address, bool readWrite)
-    {
-        Line l(address, NOT_ACCESSED, offsetSize, setSize, tagSize);
-        if(isLineInCache(l))
-            return (readWrite == READ) ? READ_HIT : WRITE_HIT;
-        return (readWrite == READ) ? READ_MISS : WRITE_MISS;
-    }
-    
-    bool isLineInCache(Line& l)
-    {
-        if(assoc == FULLY_ASSOCIATIVE)
-        {
-            for(Line& tl : lines)
-            {
-                if(tl.valid && tl.tag == l.tag)
-                {
-                    tl.lastAccessed = accessNumber++; //this is for read/write hits only
-                    return true;
-                }
-            }
-            return false;
-        }
-        else
-        {
-            return true; //TODO assoc
-        }
-    }
-
-    int insert(uint32_t address)
-    {
-        Line l(address, accessNumber++, offsetSize, setSize, tagSize);
-        if(assoc == FULLY_ASSOCIATIVE)
-        {
-            for(Line& tl : lines) //try and find empty spot
-            {
-                if(!tl.valid)
-                {
-                    tl = l;
-                    return NO_EVICT;
-                }
-                int lruIndex = 0; //evict lru index
-                for(int i = 1; i < lines.size(); i++)
-                {
-                    if(lines[lruIndex].lastAccessed > lines[i].lastAccessed)
-                        lruIndex = i;
-                }
-                bool dirty = lines[lruIndex].dirty;
-                lines[lruIndex] = l;
-                return dirty ? EVICTED_DIRTY : EVICTED;
-            }
-        }
-        else //TODO assoc
-        {
-            return 0;
-        }
-    }
-
-    void print()
-    {
-        cout << "\n==================== printing cache ====================" << endl;
-        int i = 0;
-        for(Line& l : lines)
-        {
-            cout << "=== entry " << i++ << " ===" << endl;
-            l.print();
-        }
-        cout << "======== cache parameters ========" << endl;
-        cout << "accessNumber " << accessNumber << endl;
-        cout << "cacheSize " << cacheSize << endl;
-        cout << "assoc " << assoc << endl;
-        cout << "==================== endof cache ====================\n" << endl;
-    }
+	vector<int>& positionsInCache(uint32_t address)
+	{
+		Line l(address, aDim, NOT_ACCESSED);
+		vector<int> v;
+		int sets = std::pow(2, cDim.lineNumber - cDim.assoc);
+		int offset = std::pow(2, cDim.cacheSize) / sets;
+		int indexInSet = l.set; //TODO maybe this needs 2^ too?
+		for(int i = 0; i < sets; i++)
+		{
+			v.push_back(i * offset + indexInSet);
+		}
+		return v;
+	}
 };
 
 /*=============================================================================
@@ -227,235 +180,194 @@ struct Cache
 =============================================================================*/
 struct Memory
 {
-    Cache l1;
-    Cache l2;
-    AccessData data;
-    bool writeAllocate;
+	Cache l1;
+	Cache l2;
+	AccessData data;
+	bool writeAllocate;
+	std::pair<bool, uint32_t> dirty;
 
-    Memory(int tL1, int tL2, int tMem, bool writeAllocate,
-    int assoc1, int offsetSize1, int setSize1, int tagSize1, int cacheSize1, int blockSize1,
-    int assoc2, int offsetSize2, int setSize2, int tagSize2, int cacheSize2, int blockSize2) :
-    data(AccessData(tL1, tL2, tMem)),
-    l1(Cache(assoc1, offsetSize1, setSize1, tagSize1, cacheSize1, blockSize1)),
-    l2(Cache(assoc2, offsetSize2, setSize2, tagSize2, cacheSize2, blockSize2)),
-    writeAllocate(writeAllocate) {}
+	int read(uint32_t address, int cache)
+	{
+		Cache& c = (cache == L1_CACHE) ? l1 : l2;
+	}
 
-    void handleRequest(uint32_t address, int readWrite)
-    {
-        int l1Result = l1.handleRequest(address, readWrite);
-        data.update(l1Result, L1_CACHE);
-        if(l1Result == READ_HIT)
-        {
-            if(debug) cout << "l1 read hit on address 0x" << std::hex << address << std::dec << endl;
-            return;
-        }
-        else if(l1Result == READ_MISS)
-        {
-            if(debug) cout << "l1 read miss on address 0x" << std::hex << address << std::dec << endl;
-            //search for block in l2
-            //bring block to l1. if evicted dirty, write evicted block to l2
-            int insertResult = l1.insert(address);
-            if(insertResult == EVICTED_DIRTY)
-                l2.insert(address); // TODO split up to different functions
-        }
-        else if(l1Result == WRITE_HIT)
-        {
-            if(l1.writePolicy == WRITE_BACK)
-                l1.markDirty(address);
-            else if(l1.writePolicy == WRITE_THRU)
-                l2.insertOrUpdate(address);
-            return;
-        }
-        // else if(l1Result == WRITE_MISS)
-        // {
-        //     if(writeAllocate)
-        //     {
-        //         int updateResult = l1.insertOrUpdate(address);
-        //         if(updateResult == EVICTED_DIRTY)
-        //             l2.insertOrUpdate(address);
-        //     }
-        // }
+	int write(uint32_t address, int cache)
+	{
+		Cache& c = (cache == L1_CACHE) ? l1 : l2;
+	}
 
-        // int l2Result = l2.handleRequest(address, readWrite);
-        // data.update(l2Result, L2_CACHE);
-        // if(l2Result == READ_HIT)
-        // {
-        //     return;
-        // }
-        // else if(l2Result == READ_MISS)
-        // {
-        //     int updateResult = l2.insertOrUpdate(address);
-        //     if(updateResult == EVICTED_DIRTY)
-        //         l1.evict(address);
-        // }
-        // else if(l2Result == WRITE_HIT)
-        // {
-        //     if(l2.writePolicy == WRITE_BACK)
-        //         l2.markDirty(address);
-        //     else if(l2.writePolicy == WRITE_THRU)
-        //         ; //actually writing to main memory
-        //     return;
-        // }
-        // else if(l2Result == WRITE_MISS)
-        // {
-        //     if(writeAllocate)
-        //     {
-        //         int updateResult = l2.insertOrUpdate(address);
-        //         if(updateResult == EVICTED_DIRTY)
-        //             ; //actually writing dirty block to main memory
-        //     }
-        // }
-    }
+	void evict(uint32_t address, int cache)
+	{
+		Cache& c = (cache == L1_CACHE) ? l1 : l2;
+	}
+
+
+
+	void memoryAccess(uint32_t address, int readWrite)
+	{
+		int result = INVALID_RESULT;
+		if(readWrite == READ)
+		{
+			//l1
+			result = read(address, L1_CACHE);
+			if(result == READ_HIT)
+			{
+				data.update(READ_HIT, L1_CACHE);
+				return;
+			}
+			else if(result == READ_MISS_INSERT_INVALID || result == READ_MISS_EVICT_CLEAN)
+			{
+				data.update(READ_MISS, L1_CACHE);
+			}
+			else if(result == READ_MISS_EVICT_DIRTY)
+			{
+				data.update(READ_MISS, L1_CACHE);
+				write(dirty.second, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
+				dirty.first = false;
+			}
+
+			//l2
+			result = read(address, L2_CACHE);
+			if(result == READ_HIT)
+			{
+				data.update(READ_HIT, L2_CACHE);
+				return;
+			}
+			data.update(READ_MISS, L2_CACHE);
+			if(result == READ_MISS_INSERT_INVALID)
+				return;
+			evict(dirty.second, L1_CACHE);
+			dirty.first = false;
+		}
+		else if(readWrite == WRITE)
+		{
+			//l1
+			result = write(address, L1_CACHE);
+			if(result == WRITE_HIT)
+			{
+				data.update(WRITE_HIT, L1_CACHE);
+				return;
+			}
+			if(result == WRITE_MISS_NO_ALLOC)
+			{
+				data.update(WRITE_MISS, L1_CACHE);
+				write(address, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
+				return;
+			}
+			else if(result == READ_MISS_INSERT_INVALID || result == READ_MISS_EVICT_CLEAN)
+			{
+				data.update(WRITE_MISS, L1_CACHE);
+			}
+			else if(result == WRITE_MISS_EVICT_DIRTY)
+			{
+				data.update(WRITE_MISS, L1_CACHE);
+				write(dirty, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
+				dirty.first = false;
+			}
+
+			//l2
+			result = write(address, L2_CACHE);
+			if(result == WRITE_HIT)
+			{
+				data.update(WRITE_HIT, L2_CACHE);
+				return;
+			}
+			data.update(WRITE_MISS, L2_CACHE);
+			if(result == WRITE_MISS_INSERT_INVALID)
+				return;
+			evict(dirty.second, L1_CACHE);
+			dirty.first = false;
+		}
+	}
 };
 
 /*=============================================================================
-* Main
+* main
 =============================================================================*/
-int main()
+int main(int argc, char **argv)
 {
-    int assoc = FULLY_ASSOCIATIVE;
-    int offsetSize = 4;
-    int setSize = 0;
-    int tagSize = 32 - offsetSize - setSize;
-    int cacheSize = 2;
-    int blockSize = 0;
 
-    Memory m(0,0,0,false,FULLY_ASSOCIATIVE,offsetSize, setSize, tagSize, cacheSize, blockSize,FULLY_ASSOCIATIVE,offsetSize, setSize, tagSize, cacheSize*2, blockSize);
-    uint32_t x;
-     m.l1.print();
-    x = 0x00000000;
-    m.handleRequest(x, READ);
-    m.l1.print();
-    // x = 0x00000004;
-    // m.handleRequest(x, READ);
-    // x = 0x00100000;
-    // m.handleRequest(x, READ);
-    // x = 0x00000000;
-    // m.handleRequest(x, READ);
-    // x = 0x0000000C;
-    // m.handleRequest(x, READ);
-    // x = 0x00000010;
-    // m.handleRequest(x, READ);
-    // x = 0x0000001C;
-    // m.handleRequest(x, READ);
-    // x = 0x00000020;
-    // m.handleRequest(x, READ);
-    // x = 0x0000002C;
-    // m.handleRequest(x, READ);
-    // x = 0x00000030;
-    // m.handleRequest(x, READ);
-    // x = 0x0000003C;
-    // m.handleRequest(x, READ);
-    // x = 0x00000040;
-    // m.handleRequest(x, READ);
-    // x = 0x00000008;
-    // m.handleRequest(x, READ);
-    // x = 0x00000044;
-    // m.handleRequest(x, READ);
+	if (argc < 19) {
+		cerr << "Not enough arguments" << endl;
+		return 0;
+	}
+
+	// Get input arguments
+
+	// File
+	// Assuming it is the first argument
+	char* fileString = argv[1];
+	ifstream file(fileString); //input file stream
+	string line;
+	if (!file || !file.good()) {
+		// File doesn't exist or some other error
+		cerr << "File not found" << endl;
+		return 0;
+	}
+
+	unsigned MemCyc = 0, BSize = 0, L1Size = 0, L2Size = 0, L1Assoc = 0,
+			L2Assoc = 0, L1Cyc = 0, L2Cyc = 0, WrAlloc = 0;
+
+	for (int i = 2; i < 19; i += 2) {
+		string s(argv[i]);
+		if (s == "--mem-cyc") {
+			MemCyc = atoi(argv[i + 1]);
+		} else if (s == "--bsize") {
+			BSize = atoi(argv[i + 1]);
+		} else if (s == "--l1-size") {
+			L1Size = atoi(argv[i + 1]);
+		} else if (s == "--l2-size") {
+			L2Size = atoi(argv[i + 1]);
+		} else if (s == "--l1-cyc") {
+			L1Cyc = atoi(argv[i + 1]);
+		} else if (s == "--l2-cyc") {
+			L2Cyc = atoi(argv[i + 1]);
+		} else if (s == "--l1-assoc") {
+			L1Assoc = atoi(argv[i + 1]);
+		} else if (s == "--l2-assoc") {
+			L2Assoc = atoi(argv[i + 1]);
+		} else if (s == "--wr-alloc") {
+			WrAlloc = atoi(argv[i + 1]);
+		} else {
+			cerr << "Error in arguments" << endl;
+			return 0;
+		}
+	}
+
+	while (getline(file, line)) {
+
+		stringstream ss(line);
+		string address;
+		char operation = 0; // read (R) or write (W)
+		if (!(ss >> operation >> address)) {
+			// Operation appears in an Invalid format
+			cout << "Command Format error" << endl;
+			return 0;
+		}
+
+		// DEBUG - remove this line
+		cout << "operation: " << operation;
+
+		string cutAddress = address.substr(2); // Removing the "0x" part of the address
+
+		// DEBUG - remove this line
+		cout << ", address (hex)" << cutAddress;
+
+		unsigned long int num = 0;
+		num = strtoul(cutAddress.c_str(), NULL, 16);
+
+		// DEBUG - remove this line
+		cout << " (dec) " << num << endl;
+
+	}
+
+	double L1MissRate;
+	double L2MissRate;
+	double avgAccTime;
+
+	printf("L1miss=%.03f ", L1MissRate);
+	printf("L2miss=%.03f ", L2MissRate);
+	printf("AccTimeAvg=%.03f\n", avgAccTime);
+
+	return 0;
 }
-
-//./cacheSim example1_trace --mem-cyc 100 --bsize 3 --wr-alloc 1 --l1-size 4 --l1-assoc 1 --l1-cyc 1 --l2-size 6 --l2-assoc 0 --l2-cyc 5
-// r 0x00000000
-// w 0x00000004
-// r 0x00100000
-// w 0x00000000
-// r 0x0000000C
-// r 0x00000010
-// r 0x0000001C
-// r 0x00000020
-// r 0x0000002C
-// r 0x00000030
-// r 0x0000003C
-// r 0x00000040
-// r 0x00000008
-// w 0x00000044
-
-
-// int main(int argc, char **argv) {
-
-// 	if (argc < 19) {
-// 		cerr << "Not enough arguments" << endl;
-// 		return 0;
-// 	}
-
-// 	// Get input arguments
-
-// 	// File
-// 	// Assuming it is the first argument
-// 	char* fileString = argv[1];
-// 	ifstream file(fileString); //input file stream
-// 	string line;
-// 	if (!file || !file.good()) {
-// 		// File doesn't exist or some other error
-// 		cerr << "File not found" << endl;
-// 		return 0;
-// 	}
-
-// 	unsigned MemCyc = 0, BSize = 0, L1Size = 0, L2Size = 0, L1Assoc = 0,
-// 			L2Assoc = 0, L1Cyc = 0, L2Cyc = 0, WrAlloc = 0;
-
-// 	for (int i = 2; i < 19; i += 2) {
-// 		string s(argv[i]);
-// 		if (s == "--mem-cyc") {
-// 			MemCyc = atoi(argv[i + 1]);
-// 		} else if (s == "--bsize") {
-// 			BSize = atoi(argv[i + 1]);
-// 		} else if (s == "--l1-size") {
-// 			L1Size = atoi(argv[i + 1]);
-// 		} else if (s == "--l2-size") {
-// 			L2Size = atoi(argv[i + 1]);
-// 		} else if (s == "--l1-cyc") {
-// 			L1Cyc = atoi(argv[i + 1]);
-// 		} else if (s == "--l2-cyc") {
-// 			L2Cyc = atoi(argv[i + 1]);
-// 		} else if (s == "--l1-assoc") {
-// 			L1Assoc = atoi(argv[i + 1]);
-// 		} else if (s == "--l2-assoc") {
-// 			L2Assoc = atoi(argv[i + 1]);
-// 		} else if (s == "--wr-alloc") {
-// 			WrAlloc = atoi(argv[i + 1]);
-// 		} else {
-// 			cerr << "Error in arguments" << endl;
-// 			return 0;
-// 		}
-// 	}
-
-// 	while (getline(file, line)) {
-
-// 		stringstream ss(line);
-// 		string address;
-// 		char operation = 0; // read (R) or write (W)
-// 		if (!(ss >> operation >> address)) {
-// 			// Operation appears in an Invalid format
-// 			cout << "Command Format error" << endl;
-// 			return 0;
-// 		}
-
-// 		// DEBUG - remove this line
-// 		cout << "operation: " << operation;
-
-// 		string cutAddress = address.substr(2); // Removing the "0x" part of the address
-
-// 		// DEBUG - remove this line
-// 		cout << ", address (hex)" << cutAddress;
-
-// 		unsigned long int num = 0;
-// 		num = strtoul(cutAddress.c_str(), NULL, 16);
-
-// 		// DEBUG - remove this line
-// 		cout << " (dec) " << num << endl;
-
-// 	}
-
-// 	double L1MissRate;
-// 	double L2MissRate;
-// 	double avgAccTime;
-
-// 	//your code here
-
-// 	printf("L1miss=%.03f ", L1MissRate);
-// 	printf("L2miss=%.03f ", L2MissRate);
-// 	printf("AccTimeAvg=%.03f\n", avgAccTime);
-
-// 	return 0;
-// }
