@@ -7,6 +7,8 @@
 #include <sstream>
 #include <vector>
 
+#include <cassert>
+
 using std::FILE;
 using std::string;
 using std::cout;
@@ -37,6 +39,8 @@ using std::vector;
 #define L2_CACHE 2
 
 #define NOT_ACCESSED -1
+
+#define dbg 1
 
 /*=============================================================================
 * global functions
@@ -73,7 +77,7 @@ struct AccessData
     {
         accesses++;
         if(result == READ_MISS || result == WRITE_MISS)
-            (cache == L1_CACHE) ? l1Miss++ : l2Miss++;
+			(cache == L1_CACHE) ? l1Miss++ : l2Miss++;
 		else
 			(cache == L1_CACHE) ? l1Hit++ : l2Hit++;
     }
@@ -102,14 +106,14 @@ struct AddrDim
 	AddrDim(int offsetSize, int setSize, int tagSize) : offsetSize(offsetSize), setSize(setSize), tagSize(tagSize) {}
 };
 
-struct CacheDim
-{
-	int cacheSize;
-    int blockSize;
-	int assoc;
-	int lineNumber;
-	CacheDim(int cacheSize, int blockSize, int assoc) : cacheSize(cacheSize), blockSize(blockSize), assoc(assoc) {}
-}
+// struct CacheDim
+// {
+// 	int cacheSize;
+//     int blockSize;
+// 	int assoc;
+// 	int lineNumber;
+// 	CacheDim(int cacheSize, int blockSize, int assoc) : cacheSize(cacheSize), blockSize(blockSize), assoc(assoc) {}
+// };
 
 /*=============================================================================
 * Line
@@ -125,6 +129,7 @@ struct Line
 	Line() : valid(false), lastAccessed(NOT_ACCESSED) {}
 	Line(uint32_t address, AddrDim d, int accessNumber) : address(address), valid(true), dirty(false), lastAccessed(accessNumber)
 	{
+		
         uint32_t _address = address;
         _address >>= d.offsetSize;
         int mask = (1 << d.setSize) - 1;
@@ -132,11 +137,13 @@ struct Line
         _address >>= d.setSize;
         mask = (1 << d.tagSize) - 1;
         tag = _address & mask;
+		if(d.tagSize == 32)
+			tag = address;
 	}
 
 	void print()
 	{
-        cout << "address "; printBinary(address);
+        cout << "address 0x" << std::hex << address << std::dec << ", "; printBinary(address);
         cout << "set "; printBinary(set);
         cout << "tag "; printBinary(tag);
 		cout << "valid " << valid << endl;
@@ -151,28 +158,54 @@ struct Line
 struct Cache
 {
 	vector<Line> lines;
-	CacheDim cDim;
-	AddrDim aDim;
-	Cache(CacheDim cDim, AddrDim aDim) : cDim(cDim), aDim(aDim)
+	AddrDim dim;
+	int offsetSize;
+	int setSize;
+	int tagSize;
+	int cacheSize;
+    int blockSize;
+	int assoc;
+	int lineNumber;
+	int accessNumber;
+	Cache(AddrDim dim, int cacheSize, int blockSize, int assoc) : dim(dim),
+	offsetSize(dim.offsetSize), setSize(dim.setSize), tagSize(dim.tagSize),
+	cacheSize(cacheSize), blockSize(blockSize), assoc(assoc), accessNumber(0)
 	{
-		int lineNumber = cDim.cacheSize - aDim.offsetSize;
-		cDim.lineNumber = lineNumber;
-		lines = vector<Line>(std::pow(2, cDim.cacheSize - aDim.offsetSize));
+		lineNumber = cacheSize - offsetSize;
+		lines = vector<Line>(std::pow(2, cacheSize - dim.offsetSize));
+		assert(blockSize == offsetSize && "offset == block in cache ctor");
 	}
 
-	vector<int>& positionsInCache(uint32_t address)
+	vector<int> positionsInCache(uint32_t address)
 	{
-		Line l(address, aDim, NOT_ACCESSED);
+		Line l(address, dim, NOT_ACCESSED);
 		vector<int> v;
-		int sets = std::pow(2, cDim.lineNumber - cDim.assoc);
-		int offset = std::pow(2, cDim.cacheSize) / sets;
-		int indexInSet = l.set; //TODO maybe this needs 2^ too?
-		for(int i = 0; i < sets; i++)
+		int setSize = std::pow(2, lineNumber - assoc);
+		int setsNum = std::pow(2, assoc);
+		for(int i = 0; i < setsNum; i++)
 		{
-			v.push_back(i * offset + indexInSet);
+			int index = i * setSize + l.set;
+			v.push_back(index);
 		}
 		return v;
 	}
+
+    void print(int num)
+    {
+        cout << "\n==================== printing cache " << num << " ====================" << endl;
+        int i = 0;
+        for(Line& l : lines)
+        {
+            cout << "=== entry " << i++ << " ===" << endl;
+            l.print();
+        }
+        cout << "======== cache parameters ========" << endl;
+        cout << "cacheSize " << cacheSize << endl;
+		cout << "blockSize " << blockSize << endl;
+        cout << "assoc " << assoc << endl;
+        cout << "accessNumber " << accessNumber << endl;
+        cout << "\n==================== endof cache " << num << " ====================" << endl;
+    }
 };
 
 /*=============================================================================
@@ -186,22 +219,129 @@ struct Memory
 	bool writeAllocate;
 	std::pair<bool, uint32_t> dirty;
 
+	Memory(unsigned MemCyc, unsigned BSize, unsigned L1Size, unsigned L2Size, unsigned L1Assoc, unsigned L2Assoc, unsigned L1Cyc, unsigned L2Cyc, unsigned WrAlloc) :
+	data(AccessData(L1Cyc, L2Cyc, MemCyc)), writeAllocate(WrAlloc),
+	l1(Cache(AddrDim(BSize, L1Size - BSize - L1Assoc, 32 - BSize - (L1Size - BSize - L1Assoc)), L1Size, BSize, L1Assoc)),
+	l2(Cache(AddrDim(BSize, L2Size - BSize - L2Assoc, 32 - BSize - (L2Size - BSize - L2Assoc)), L1Size, BSize, L2Assoc))
+	{}
+
 	int read(uint32_t address, int cache)
 	{
 		Cache& c = (cache == L1_CACHE) ? l1 : l2;
+		Line l(address, c.dim, c.accessNumber++);
+		vector<int> positions = c.positionsInCache(address);
+		for(int j = 0; j < positions.size(); j++)
+		{
+			int i = positions[j];
+			Line& cl = c.lines[i];
+			if(cl.valid && cl.tag == l.tag) //read hit!
+			{
+				cl.lastAccessed = l.lastAccessed;
+				return READ_HIT;
+			}
+		}
+		//read miss - try inserting in invalid places
+		for(int j = 0; j < positions.size(); j++)
+		{
+			int i = positions[j];
+			Line& cl = c.lines[i];
+			if(!cl.valid)
+			{
+				cl = l;
+				return READ_MISS_INSERT_INVALID;
+			}
+		}
+		//read miss - evict
+		int lruIndex = positions[0];
+		for(int j = 1; j < positions.size(); j++)
+		{
+			int i = positions[j];
+			assert(c.lines[i].valid);
+			if(c.lines[lruIndex].lastAccessed > c.lines[i].lastAccessed)
+				lruIndex = i;
+		}
+		assert(c.lines[lruIndex].valid);
+		if(c.lines[lruIndex].dirty)
+		{
+			dirty.first = true;
+			dirty.second = c.lines[lruIndex].address;
+			c.lines[lruIndex] = l;
+			return READ_MISS_EVICT_DIRTY;
+		}
+		c.lines[lruIndex] = l;
+		return READ_MISS_EVICT_CLEAN;
 	}
 
 	int write(uint32_t address, int cache)
 	{
 		Cache& c = (cache == L1_CACHE) ? l1 : l2;
+		Line l(address, c.dim, c.accessNumber++);
+		vector<int> positions = c.positionsInCache(address);
+		for(int j = 0; j < positions.size(); j++)
+		{
+			int i = positions[j];
+			Line& cl = c.lines[i];
+			if(cl.valid && cl.tag == l.tag) //write hit!
+			{
+				cl.lastAccessed = l.lastAccessed;
+				cl.dirty = true;
+				return WRITE_HIT;
+			}
+		}
+		//write miss
+		if(!writeAllocate)
+		{
+			c.accessNumber--;
+			return WRITE_MISS_NO_ALLOC;
+		}
+		//write miss w/ allocate - try inserting in invalid places
+		for(int j = 0; j < positions.size(); j++)
+		{
+			int i = positions[j];
+			Line& cl = c.lines[i];
+			if(!cl.valid)
+			{
+				cl = l;
+				return WRITE_MISS_INSERT_INVALID;
+			}
+		}
+		//read miss - evict
+		int lruIndex = positions[0];
+		for(int j = 1; j < positions.size(); j++)
+		{
+			int i = positions[j];
+			assert(c.lines[i].valid);
+			if(c.lines[lruIndex].lastAccessed > c.lines[i].lastAccessed)
+				lruIndex = i;
+		}
+		assert(c.lines[lruIndex].valid);
+		if(c.lines[lruIndex].dirty)
+		{
+			dirty.first = true;
+			dirty.second = c.lines[lruIndex].address;
+			c.lines[lruIndex] = l;
+			return WRITE_MISS_EVICT_DIRTY;
+		}
+		c.lines[lruIndex] = l;
+		return WRITE_MISS_EVICT_CLEAN;
 	}
 
 	void evict(uint32_t address, int cache)
 	{
 		Cache& c = (cache == L1_CACHE) ? l1 : l2;
+		Line l(address, c.dim, NOT_ACCESSED);
+		vector<int> positions = c.positionsInCache(address);
+		for(int j = 0; j < positions.size(); j++)
+		{
+			int i = positions[j];
+			Line& cl = c.lines[i];
+			if(cl.valid && cl.tag == l.tag)
+			{
+				cl.valid = false;
+				return;
+			}
+		}
 	}
-
-
 
 	void memoryAccess(uint32_t address, int readWrite)
 	{
@@ -210,17 +350,21 @@ struct Memory
 		{
 			//l1
 			result = read(address, L1_CACHE);
+			if(dbg) cout << "l1 trying read from 0x" << std::hex << address << std::dec << endl;
 			if(result == READ_HIT)
 			{
+				if(dbg) cout << "l1 read hit at 0x" << std::hex << address << std::dec << endl;
 				data.update(READ_HIT, L1_CACHE);
 				return;
 			}
 			else if(result == READ_MISS_INSERT_INVALID || result == READ_MISS_EVICT_CLEAN)
 			{
+				if(dbg) cout << "l1 read miss insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
 				data.update(READ_MISS, L1_CACHE);
 			}
 			else if(result == READ_MISS_EVICT_DIRTY)
 			{
+				if(dbg) cout << "l1 read miss evict dirty at 0x" << std::hex << address << std::dec << endl;
 				data.update(READ_MISS, L1_CACHE);
 				write(dirty.second, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
 				dirty.first = false;
@@ -228,14 +372,20 @@ struct Memory
 
 			//l2
 			result = read(address, L2_CACHE);
+			if(dbg) cout << "l2 trying read from 0x" << std::hex << address << std::dec << endl;
 			if(result == READ_HIT)
 			{
+				if(dbg) cout << "l2 read hit at 0x" << std::hex << address << std::dec << endl;
 				data.update(READ_HIT, L2_CACHE);
 				return;
 			}
 			data.update(READ_MISS, L2_CACHE);
 			if(result == READ_MISS_INSERT_INVALID)
+			{
+				if(dbg) cout << "l2 read miss insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
 				return;
+			}
+			if(dbg) cout << "l1 read miss evict dirty at 0x" << std::hex << address << std::dec << endl;
 			evict(dirty.second, L1_CACHE);
 			dirty.first = false;
 		}
@@ -243,48 +393,97 @@ struct Memory
 		{
 			//l1
 			result = write(address, L1_CACHE);
+			if(dbg) cout << "l1 trying write to 0x" << std::hex << address << std::dec << endl;
 			if(result == WRITE_HIT)
 			{
+				if(dbg) cout << "l1 write hit at 0x" << std::hex << address << std::dec << endl;
 				data.update(WRITE_HIT, L1_CACHE);
 				return;
 			}
 			if(result == WRITE_MISS_NO_ALLOC)
 			{
+				if(dbg) cout << "l1 write miss w/o alloc 0x" << std::hex << address << std::dec << endl;
 				data.update(WRITE_MISS, L1_CACHE);
 				write(address, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
 				return;
 			}
 			else if(result == READ_MISS_INSERT_INVALID || result == READ_MISS_EVICT_CLEAN)
 			{
+				if(dbg) cout << "l1 write miss w/ alloc insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
 				data.update(WRITE_MISS, L1_CACHE);
 			}
 			else if(result == WRITE_MISS_EVICT_DIRTY)
 			{
+				if(dbg) cout << "l1 write miss w/ alloc evict dirty at 0x" << std::hex << address << std::dec << endl;
 				data.update(WRITE_MISS, L1_CACHE);
-				write(dirty, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
+				write(dirty.second, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
 				dirty.first = false;
 			}
 
 			//l2
 			result = write(address, L2_CACHE);
+			if(dbg) cout << "l2 trying write to 0x" << std::hex << address << std::dec << endl;
 			if(result == WRITE_HIT)
 			{
+				if(dbg) cout << "l2 write hit at 0x" << std::hex << address << std::dec << endl;
 				data.update(WRITE_HIT, L2_CACHE);
 				return;
 			}
 			data.update(WRITE_MISS, L2_CACHE);
 			if(result == WRITE_MISS_INSERT_INVALID)
+			{
+				if(dbg) cout << "l2 write miss w/ alloc insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
 				return;
+			}
+			if(dbg) cout << "need new debug message here!!" << endl;
 			evict(dirty.second, L1_CACHE);
 			dirty.first = false;
 		}
+	}
+
+	void print()
+	{
+		cout << "\n===================================== MEMORY =====================================\n";
+		l1.print(1);
+		l2.print(2);
+		cout << "\n===================================== MEMORY =====================================\n";
+	}
+
+	uint32_t calcTag(uint32_t address)
+	{
+		Line l(address, l1.dim, NOT_ACCESSED);
+		return l.tag;
+	}
+
+	void printTag(uint32_t address)
+	{
+		cout << "tag of 0x" << std::hex << address << " = "; printBinary(address);
 	}
 };
 
 /*=============================================================================
 * main
 =============================================================================*/
-int main(int argc, char **argv)
+int main()
+{
+	int offsetSize = 0;
+	int cacheSize = 1;
+	int assoc = 0;
+	int blockSize = 0;
+	Memory mem(0, blockSize, cacheSize, cacheSize, assoc, assoc, 0, 0, 0);
+	uint32_t address = 0xCAFEBABA;
+	mem.print();
+	for(int i = 0; i < std::pow(2, cacheSize); i++)
+	{
+		mem.memoryAccess(address, READ);
+		mem.memoryAccess(address, WRITE);
+		mem.print();
+		address++;
+	}
+	mem.memoryAccess(address, READ);
+	mem.print();
+}
+int _main(int argc, char **argv)
 {
 
 	if (argc < 19) {
@@ -295,7 +494,7 @@ int main(int argc, char **argv)
 	// Get input arguments
 
 	// File
-	// Assuming it is the first argument
+	// Assuming it is the first argument§
 	char* fileString = argv[1];
 	ifstream file(fileString); //input file stream
 	string line;
