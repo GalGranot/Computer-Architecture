@@ -62,26 +62,27 @@ void printBinary(uint32_t n)
 =============================================================================*/
 struct AccessData
 {
-	int tL1;
-    int tL2;
-    int tMem;
-    int l1Miss;
-	int l1Hit;
-    int l2Miss;
-	int l2Hit;
-    int accesses;
+	double tL1;
+    double tL2;
+    double tMem;
+    double l1Miss;
+	double l1Hit;
+    double l2Miss;
+	double l2Hit;
+    double accesses;
     AccessData(int tL1, int tL2, int tMem) : 
 	tL1(tL1), tL2(tL2), tMem(tMem), l1Miss(0), l2Miss(0), l1Hit(0), l2Hit(0), accesses(0) {}
 
     void update(int result, int cache)
     {
-        accesses++;
-        if(result == READ_MISS || result == WRITE_MISS)
-			(cache == L1_CACHE) ? l1Miss++ : l2Miss++;
-		else
+		if(cache == L1_CACHE)
+        	accesses++;
+		bool hit = result == READ_HIT || result == WRITE_HIT;
+		if(hit)
 			(cache == L1_CACHE) ? l1Hit++ : l2Hit++;
+		else
+			(cache == L1_CACHE) ? l1Miss++ : l2Miss++;
     }
-
 	double missRate(int cache)
 	{
 		double result;
@@ -92,6 +93,17 @@ struct AccessData
 		else
 			result = ((l1Hit + l1Miss) * tL1 + (l2Hit + l2Miss) * tL2 + l2Miss * tMem) / accesses;
 		return result;
+	}
+	void dump()
+	{
+		std::cout << "tL1=" << tL1 << ", "
+		<< "tL2=" << tL2 << ", "
+		<< "tMem=" << tMem << ", "
+		<< "l1Miss=" << l1Miss << ", "
+		<< "l1Hit=" << l1Hit << ", "
+		<< "l2Miss=" << l2Miss << ", "
+		<< "l2Hit=" << l2Hit << ", "
+		<< "accesses=" << accesses << std::endl;
 	}
 };
 
@@ -129,7 +141,6 @@ struct Line
 	Line() : valid(false), lastAccessed(NOT_ACCESSED) {}
 	Line(uint32_t address, AddrDim d, int accessNumber) : address(address), valid(true), dirty(false), lastAccessed(accessNumber)
 	{
-		
         uint32_t _address = address;
         _address >>= d.offsetSize;
         int mask = (1 << d.setSize) - 1;
@@ -193,10 +204,10 @@ struct Cache
     void print(int num)
     {
         cout << "\n==================== printing cache " << num << " ====================" << endl;
-        int i = 0;
-        for(Line& l : lines)
+        for(int i = 0; i < lines.size(); i++)
         {
-            cout << "=== entry " << i++ << " ===" << endl;
+			Line& l = lines[i];
+            cout << "=== entry " << i << " ===" << endl;
             l.print();
         }
         cout << "======== cache parameters ========" << endl;
@@ -219,10 +230,10 @@ struct Memory
 	bool writeAllocate;
 	std::pair<bool, uint32_t> dirty;
 
-	Memory(unsigned MemCyc, unsigned BSize, unsigned L1Size, unsigned L2Size, unsigned L1Assoc, unsigned L2Assoc, unsigned L1Cyc, unsigned L2Cyc, unsigned WrAlloc) :
+	Memory(unsigned MemCyc, unsigned BSize, unsigned L1Size, unsigned L2Size, unsigned L1Assoc, unsigned L2Assoc, unsigned L1Cyc, unsigned L2Cyc, unsigned WrAlloc) : //TODO fully associative set size calc 
 	data(AccessData(L1Cyc, L2Cyc, MemCyc)), writeAllocate(WrAlloc),
 	l1(Cache(AddrDim(BSize, L1Size - BSize - L1Assoc, 32 - BSize - (L1Size - BSize - L1Assoc)), L1Size, BSize, L1Assoc)),
-	l2(Cache(AddrDim(BSize, L2Size - BSize - L2Assoc, 32 - BSize - (L2Size - BSize - L2Assoc)), L1Size, BSize, L2Assoc))
+	l2(Cache(AddrDim(BSize, L2Size - BSize - L2Assoc, 32 - BSize - (L2Size - BSize - L2Assoc)), L2Size, BSize, L2Assoc))
 	{}
 
 	int read(uint32_t address, int cache)
@@ -349,93 +360,97 @@ struct Memory
 		if(readWrite == READ)
 		{
 			//l1
-			result = read(address, L1_CACHE);
 			if(dbg) cout << "l1 trying read from 0x" << std::hex << address << std::dec << endl;
+			result = read(address, L1_CACHE);
+			data.update(result, L1_CACHE);
 			if(result == READ_HIT)
 			{
 				if(dbg) cout << "l1 read hit at 0x" << std::hex << address << std::dec << endl;
-				data.update(READ_HIT, L1_CACHE);
 				return;
 			}
 			else if(result == READ_MISS_INSERT_INVALID || result == READ_MISS_EVICT_CLEAN)
 			{
 				if(dbg) cout << "l1 read miss insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
-				data.update(READ_MISS, L1_CACHE);
 			}
 			else if(result == READ_MISS_EVICT_DIRTY)
 			{
 				if(dbg) cout << "l1 read miss evict dirty at 0x" << std::hex << address << std::dec << endl;
-				data.update(READ_MISS, L1_CACHE);
 				write(dirty.second, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
 				dirty.first = false;
 			}
 
 			//l2
-			result = read(address, L2_CACHE);
 			if(dbg) cout << "l2 trying read from 0x" << std::hex << address << std::dec << endl;
+			result = read(address, L2_CACHE);
+			data.update(result, L2_CACHE);
 			if(result == READ_HIT)
 			{
 				if(dbg) cout << "l2 read hit at 0x" << std::hex << address << std::dec << endl;
-				data.update(READ_HIT, L2_CACHE);
 				return;
 			}
-			data.update(READ_MISS, L2_CACHE);
 			if(result == READ_MISS_INSERT_INVALID)
 			{
 				if(dbg) cout << "l2 read miss insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
 				return;
 			}
-			if(dbg) cout << "l1 read miss evict dirty at 0x" << std::hex << address << std::dec << endl;
+			else if(result == READ_MISS_EVICT_CLEAN)
+			{
+				if(dbg) cout << "l2 read miss insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
+			}
+			else
+				if(dbg) cout << "l2 read miss evict dirty at 0x" << std::hex << address << std::dec << endl;
 			evict(dirty.second, L1_CACHE);
 			dirty.first = false;
 		}
+
 		else if(readWrite == WRITE)
 		{
 			//l1
-			result = write(address, L1_CACHE);
 			if(dbg) cout << "l1 trying write to 0x" << std::hex << address << std::dec << endl;
+			result = write(address, L1_CACHE);
+			data.update(result, L1_CACHE);
 			if(result == WRITE_HIT)
 			{
 				if(dbg) cout << "l1 write hit at 0x" << std::hex << address << std::dec << endl;
-				data.update(WRITE_HIT, L1_CACHE);
 				return;
 			}
 			if(result == WRITE_MISS_NO_ALLOC)
 			{
 				if(dbg) cout << "l1 write miss w/o alloc 0x" << std::hex << address << std::dec << endl;
-				data.update(WRITE_MISS, L1_CACHE);
-				write(address, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
+				write(address, L2_CACHE); //TODO fix write allocate
 				return;
 			}
-			else if(result == READ_MISS_INSERT_INVALID || result == READ_MISS_EVICT_CLEAN)
+			else if(result == WRITE_MISS_INSERT_INVALID || result == WRITE_MISS_EVICT_CLEAN)
 			{
 				if(dbg) cout << "l1 write miss w/ alloc insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
-				data.update(WRITE_MISS, L1_CACHE);
 			}
 			else if(result == WRITE_MISS_EVICT_DIRTY)
 			{
 				if(dbg) cout << "l1 write miss w/ alloc evict dirty at 0x" << std::hex << address << std::dec << endl;
-				data.update(WRITE_MISS, L1_CACHE);
 				write(dirty.second, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
 				dirty.first = false;
 			}
 
 			//l2
-			result = write(address, L2_CACHE);
 			if(dbg) cout << "l2 trying write to 0x" << std::hex << address << std::dec << endl;
+			result = write(address, L2_CACHE);
+			data.update(result, L2_CACHE);
 			if(result == WRITE_HIT)
 			{
 				if(dbg) cout << "l2 write hit at 0x" << std::hex << address << std::dec << endl;
-				data.update(WRITE_HIT, L2_CACHE);
 				return;
 			}
-			data.update(WRITE_MISS, L2_CACHE);
 			if(result == WRITE_MISS_INSERT_INVALID)
 			{
 				if(dbg) cout << "l2 write miss w/ alloc insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
 				return;
 			}
-			if(dbg) cout << "need new debug message here!!" << endl;
+			else if(result == WRITE_MISS_EVICT_CLEAN || result == WRITE_MISS_INSERT_INVALID)
+				if(dbg) cout << "l2 write miss w/ alloc insert invalid/evict clean at 0x" << std::hex << address << std::dec << endl;
+			else
+			{
+				if(dbg) cout << "l2 write miss evict dirty at 0x" << std::hex << address << std::dec << endl;
+			}
 			evict(dirty.second, L1_CACHE);
 			dirty.first = false;
 		}
@@ -451,7 +466,7 @@ struct Memory
 
 	uint32_t calcTag(uint32_t address)
 	{
-		Line l(address, l1.dim, NOT_ACCESSED);
+		Line l(address, l2.dim, NOT_ACCESSED);
 		return l.tag;
 	}
 
@@ -464,26 +479,27 @@ struct Memory
 /*=============================================================================
 * main
 =============================================================================*/
-int main()
-{
-	int offsetSize = 0;
-	int cacheSize = 1;
-	int assoc = 0;
-	int blockSize = 0;
-	Memory mem(0, blockSize, cacheSize, cacheSize, assoc, assoc, 0, 0, 0);
-	uint32_t address = 0xCAFEBABA;
-	mem.print();
-	for(int i = 0; i < std::pow(2, cacheSize); i++)
-	{
-		mem.memoryAccess(address, READ);
-		mem.memoryAccess(address, WRITE);
-		mem.print();
-		address++;
-	}
-	mem.memoryAccess(address, READ);
-	mem.print();
-}
-int _main(int argc, char **argv)
+// int main()
+// {
+// 	int offsetSize = 0;
+// 	int cacheSize = 1;
+// 	int assoc = 0;
+// 	int blockSize = 0;
+// 	Memory mem(0, blockSize, cacheSize, cacheSize, assoc, assoc, 0, 0, 0);
+// 	uint32_t address = 0xCAFEBABA;
+// 	mem.print();
+// 	for(int i = 0; i < std::pow(2, cacheSize); i++)
+// 	{
+// 		mem.memoryAccess(address, READ);
+// 		mem.memoryAccess(address, WRITE);
+// 		mem.print();
+// 		address++;
+// 	}
+// 	mem.memoryAccess(address, READ);
+// 	mem.print();
+// }
+
+int main(int argc, char **argv)
 {
 
 	if (argc < 19) {
@@ -533,6 +549,7 @@ int _main(int argc, char **argv)
 		}
 	}
 
+	Memory mem(MemCyc, BSize, L1Size, L2Size, L1Assoc, L2Assoc, L1Cyc, L2Cyc, WrAlloc);
 	while (getline(file, line)) {
 
 		stringstream ss(line);
@@ -545,24 +562,26 @@ int _main(int argc, char **argv)
 		}
 
 		// DEBUG - remove this line
-		cout << "operation: " << operation;
+		if(dbg) cout << "operation: " << operation;
 
 		string cutAddress = address.substr(2); // Removing the "0x" part of the address
 
 		// DEBUG - remove this line
-		cout << ", address (hex)" << cutAddress;
+		if(dbg) cout << ", address (hex)" << cutAddress;
 
 		unsigned long int num = 0;
 		num = strtoul(cutAddress.c_str(), NULL, 16);
-
+		
 		// DEBUG - remove this line
-		cout << " (dec) " << num << endl;
+		if(dbg) cout << " (dec) " << num << endl;
 
+		int readWrite = (operation == 'r') ? READ : WRITE;
+		mem.memoryAccess(num, readWrite);
 	}
 
-	double L1MissRate;
-	double L2MissRate;
-	double avgAccTime;
+	double L1MissRate = mem.data.missRate(L1_CACHE);
+	double L2MissRate = mem.data.missRate(L2_CACHE);
+	double avgAccTime = mem.data.missRate(0);
 
 	printf("L1miss=%.03f ", L1MissRate);
 	printf("L2miss=%.03f ", L2MissRate);
