@@ -6,7 +6,8 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-
+#include <stdint.h>
+#include <cmath>
 #include <cassert>
 
 using std::FILE;
@@ -40,7 +41,7 @@ using std::vector;
 
 #define NOT_ACCESSED -1
 
-#define dbg 1
+#define dbg 0
 
 /*=============================================================================
 * global functions

@@ -19,7 +19,7 @@ for filename in tests/test*.command; do
     (( all++ ))
     if [ "$diff_result" != "" ]; then
         echo The test ${test_num} didnt pass
-        echo ${diff_result}
+        #echo ${diff_result}
         (( failed++ ))
     fi
 done
@@ -38,7 +38,7 @@ for filename in tests_t/test*.command; do
     (( all++ ))
     if [ "$diff_result" != "" ]; then
         echo The test ${test_num} didnt pass
-        echo ${diff_result}
+        #echo ${diff_result}
         (( failed++ ))
     fi
 done
@@ -57,7 +57,7 @@ for filename in examples/example*.command; do
     (( all++ ))
     if [ "$diff_result" != "" ]; then
         echo The test ${test_num} didnt pass
-        echo ${diff_result}
+        #echo ${diff_result}
         (( failed++ ))
     fi
 done
