@@ -307,6 +307,7 @@ struct Memory
 			return WRITE_MISS_NO_ALLOC;
 		}
 		//write miss w/ allocate - try inserting in invalid places
+		l.dirty = true;
 		for(int j = 0; j < positions.size(); j++)
 		{
 			int i = positions[j];
@@ -317,7 +318,7 @@ struct Memory
 				return WRITE_MISS_INSERT_INVALID;
 			}
 		}
-		//read miss - evict
+		//write miss - evict
 		int lruIndex = positions[0];
 		for(int j = 1; j < positions.size(); j++)
 		{
