@@ -88,11 +88,13 @@ struct AccessData
 	{
 		double result;
 		if(cache == L1_CACHE)
-			result = l1Miss / (l1Miss + l1Hit);
+			result = l1Miss / (l1Hit + l1Miss);
 		else if(cache == L2_CACHE)
 			result = l2Miss / (l2Miss + l2Hit);
 		else
-			result = ((l1Hit + l1Miss) * tL1 + (l2Hit + l2Miss) * tL2 + l2Miss * tMem) / accesses;
+			// result = ((l1Hit + l1Miss) * tL1 + (l2Hit + l2Miss) * tL2 + l2Miss * tMem) / accesses;
+			result = ((l1Hit + l1Miss) * tL1 + l1Miss * tL2 + l2Miss * tMem) / (l1Hit + l1Miss);
+
 		return result;
 	}
 	void dump()
@@ -419,7 +421,8 @@ struct Memory
 			if(result == WRITE_MISS_NO_ALLOC)
 			{
 				if(dbg) cout << "l1 write miss w/o alloc 0x" << std::hex << address << std::dec << endl;
-				write(address, L2_CACHE); //TODO fix write allocate
+				result = write(address, L2_CACHE); //TODO fix write allocate
+				data.update(result, L2_CACHE);
 				return;
 			}
 			else if(result == WRITE_MISS_INSERT_INVALID || result == WRITE_MISS_EVICT_CLEAN)
