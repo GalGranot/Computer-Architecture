@@ -8,7 +8,6 @@
 #include <vector>
 #include <stdint.h>
 #include <cmath>
-#include <cassert>
 
 using std::FILE;
 using std::string;
@@ -92,8 +91,7 @@ struct AccessData
 		else if(cache == L2_CACHE)
 			result = l2Miss / (l2Miss + l2Hit);
 		else
-			// result = ((l1Hit + l1Miss) * tL1 + (l2Hit + l2Miss) * tL2 + l2Miss * tMem) / accesses;
-			result = ((l1Hit + l1Miss) * tL1 + l1Miss * tL2 + l2Miss * tMem) / (l1Hit + l1Miss);
+			result = (accesses * tL1 + l1Miss * tL2 + l2Miss * tMem) / accesses;
 
 		return result;
 	}
@@ -120,15 +118,6 @@ struct AddrDim
 	int tagSize;
 	AddrDim(int offsetSize, int setSize, int tagSize) : offsetSize(offsetSize), setSize(setSize), tagSize(tagSize) {}
 };
-
-// struct CacheDim
-// {
-// 	int cacheSize;
-//     int blockSize;
-// 	int assoc;
-// 	int lineNumber;
-// 	CacheDim(int cacheSize, int blockSize, int assoc) : cacheSize(cacheSize), blockSize(blockSize), assoc(assoc) {}
-// };
 
 /*=============================================================================
 * Line
@@ -187,7 +176,6 @@ struct Cache
 	{
 		lineNumber = cacheSize - offsetSize;
 		lines = vector<Line>(std::pow(2, cacheSize - dim.offsetSize));
-		assert(blockSize == offsetSize && "offset == block in cache ctor");
 	}
 
 	vector<int> positionsInCache(uint32_t address)
@@ -270,11 +258,9 @@ struct Memory
 		for(int j = 1; j < positions.size(); j++)
 		{
 			int i = positions[j];
-			assert(c.lines[i].valid);
 			if(c.lines[lruIndex].lastAccessed > c.lines[i].lastAccessed)
 				lruIndex = i;
 		}
-		assert(c.lines[lruIndex].valid);
 		if(c.lines[lruIndex].dirty)
 		{
 			dirty.first = true;
@@ -325,11 +311,9 @@ struct Memory
 		for(int j = 1; j < positions.size(); j++)
 		{
 			int i = positions[j];
-			assert(c.lines[i].valid);
 			if(c.lines[lruIndex].lastAccessed > c.lines[i].lastAccessed)
 				lruIndex = i;
 		}
-		assert(c.lines[lruIndex].valid);
 		if(c.lines[lruIndex].dirty)
 		{
 			dirty.first = true;
@@ -379,7 +363,7 @@ struct Memory
 			else if(result == READ_MISS_EVICT_DIRTY)
 			{
 				if(dbg) cout << "l1 read miss evict dirty at 0x" << std::hex << address << std::dec << endl;
-				write(dirty.second, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
+				write(dirty.second, L2_CACHE);
 				dirty.first = false;
 			}
 
@@ -432,7 +416,7 @@ struct Memory
 			else if(result == WRITE_MISS_EVICT_DIRTY)
 			{
 				if(dbg) cout << "l1 write miss w/ alloc evict dirty at 0x" << std::hex << address << std::dec << endl;
-				write(dirty.second, L2_CACHE); //TODO by inclusiveness write will always be sucessful - assert this
+				write(dirty.second, L2_CACHE); 
 				dirty.first = false;
 			}
 
@@ -480,29 +464,6 @@ struct Memory
 		cout << "tag of 0x" << std::hex << address << " = "; printBinary(address);
 	}
 };
-
-/*=============================================================================
-* main
-=============================================================================*/
-// int main()
-// {
-// 	int offsetSize = 0;
-// 	int cacheSize = 1;
-// 	int assoc = 0;
-// 	int blockSize = 0;
-// 	Memory mem(0, blockSize, cacheSize, cacheSize, assoc, assoc, 0, 0, 0);
-// 	uint32_t address = 0xCAFEBABA;
-// 	mem.print();
-// 	for(int i = 0; i < std::pow(2, cacheSize); i++)
-// 	{
-// 		mem.memoryAccess(address, READ);
-// 		mem.memoryAccess(address, WRITE);
-// 		mem.print();
-// 		address++;
-// 	}
-// 	mem.memoryAccess(address, READ);
-// 	mem.print();
-// }
 
 int main(int argc, char **argv)
 {
