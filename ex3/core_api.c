@@ -5,8 +5,93 @@
 
 #include <stdio.h>
 
+typedef struct _thread
+{
+	bool valid;
+	int id;
+	int pc;
+	int waitingforClk;
+} Thread;
 
-void CORE_BlockedMT() {
+bool isShortCmd(cmd_opcode op)
+{
+	return (op == CMD_NOP ||
+			op == CMD_ADD ||
+			op == CMD_SUB ||
+			op == CMD_ADDI ||
+			op == CMD_SUBI);
+}
+
+void CORE_BlockedMT() 
+{
+	int clk = 0;
+	int currThreadID = 0;
+	int threadsNum = threadsNum;
+	Thread* threads = (Thread*)malloc(sizeof(Thread) * threadsNum);
+	for(int i = 0; i < threadsNum; i++)
+		threads[i] = (Thread){ .valid = true, .id = i, .pc = 0, .waitingforClk = 0};
+	
+	tcontext context;
+	for(int i = 0; i < REGS_COUNT; i++)
+		context.reg[i] = 0;
+	Instruction* ins;
+	while(1)
+	{
+		Thread thread = threads[currThreadID];
+		SIM_MemInstRead(thread.pc, ins, thread.id);
+		cmd_opcode op = ins->opcode;
+		thread.pc++;
+		if(isShortCmd(op))
+		{
+			if(op == CMD_NOP)
+				continue;
+			//cmd is either add/addi/sub/subi
+			int result = context.reg[ins->src1_index];
+			int secondOperand = ins->isSrc2Imm ? ins->src2_index_imm : context.reg[ins->src2_index_imm];
+			secondOperand *= (op == CMD_SUB || op == CMD_SUBI) ? -1 : 1;
+			result += secondOperand;
+			continue;
+		}
+		else if(op != CMD_HALT)
+		{
+			if(op == CMD_STORE)
+				SIM_MemDataWrite(ins->dst_index + ins->src2_index_imm, context.reg[ins->src1_index]);
+			else if(op == CMD_LOAD)
+				SIM_MemDataRead(ins->src1_index + ins->src2_index_imm, &context.reg[ins->dst_index]);
+			thread.waitingforClk = clk + (op == CMD_STORE ? SIM_GetStoreLat() : SIM_GetLoadLat());
+			thread.valid = false;
+			for(int i = 0; i < threadsNum; i++)
+			{
+				int maybeThread = (thread.id + i) % threadsNum;
+				if(threads[maybeThread].valid)
+				{
+					thread = threads[maybeThread];
+					break;
+				}
+			}
+		}
+		else //halt
+		{
+			thread.valid = false;
+			for(int i = 0; i < threadsNum; i++)
+			{
+				Thread maybeThread = threads[(thread.id + i) % threadsNum];
+				if(maybeThread.valid || clk >= maybeThread.waitingforClk);
+				{
+					thread = maybeThread;
+					break;
+				}
+				//update statistics
+				free(threads);
+				return;
+			}
+			//check if all threads are halted
+		}
+		clk++;
+		//complete ins
+		//decide if context switch
+		//update statistics
+	}
 }
 
 void CORE_FinegrainedMT() {
