@@ -7,90 +7,99 @@
 
 typedef struct _thread
 {
-	bool valid;
 	int id;
 	int pc;
-	int waitingforClk;
+	int stalledFor;
+	bool halt;
 } Thread;
 
-bool isShortCmd(cmd_opcode op)
+typedef struct _data
 {
-	return (op == CMD_NOP ||
-			op == CMD_ADD ||
-			op == CMD_SUB ||
-			op == CMD_ADDI ||
-			op == CMD_SUBI);
-}
+	double cycles;
+	double ins;
+} Data;
+Data* data;
+tcontext* contexts;
+
 
 void CORE_BlockedMT() 
 {
-	int clk = 0;
-	int currThreadID = 0;
-	int threadsNum = threadsNum;
+	int threadsNum = SIM_GetThreadsNum();
 	Thread* threads = (Thread*)malloc(sizeof(Thread) * threadsNum);
+	contexts = (tcontext*)malloc(sizeof(tcontext) * threadsNum);
 	for(int i = 0; i < threadsNum; i++)
-		threads[i] = (Thread){ .valid = true, .id = i, .pc = 0, .waitingforClk = 0};
-	
-	tcontext context;
-	for(int i = 0; i < REGS_COUNT; i++)
-		context.reg[i] = 0;
-	Instruction* ins;
+	{
+		threads[i] = (Thread){.id = i, .pc = 0, .stalledFor = 0, .halt = false};
+		for(int j = 0; j < REGS_COUNT; j++)
+			contexts[i].reg[j] = 0;
+	}
+	data = (Data*)malloc(sizeof(Data));
+	*data = (Data){.cycles = 0, .ins = 0};
+	Instruction* ins = (Instruction*)malloc(sizeof(Instruction));
+	Thread thread = threads[0];
+	int k = 0;
 	while(1)
 	{
-		Thread thread = threads[currThreadID];
-		SIM_MemInstRead(thread.pc, ins, thread.id);
-		cmd_opcode op = ins->opcode;
-		thread.pc++;
-		if(isShortCmd(op))
+		printf("%d\n", k++);
+		data->cycles++;
+		for(int i = 0; i < threadsNum; i++) //decrement all counters
 		{
-			if(op == CMD_NOP)
-				continue;
-			//cmd is either add/addi/sub/subi
-			int result = context.reg[ins->src1_index];
-			int secondOperand = ins->isSrc2Imm ? ins->src2_index_imm : context.reg[ins->src2_index_imm];
-			secondOperand *= (op == CMD_SUB || op == CMD_SUBI) ? -1 : 1;
-			result += secondOperand;
-			continue;
+			if(threads[i].stalledFor > 0)
+				threads[i].stalledFor--;
 		}
-		else if(op != CMD_HALT)
+		if(thread.stalledFor > 0) //try to switch
 		{
-			if(op == CMD_STORE)
-				SIM_MemDataWrite(ins->dst_index + ins->src2_index_imm, context.reg[ins->src1_index]);
-			else if(op == CMD_LOAD)
-				SIM_MemDataRead(ins->src1_index + ins->src2_index_imm, &context.reg[ins->dst_index]);
-			thread.waitingforClk = clk + (op == CMD_STORE ? SIM_GetStoreLat() : SIM_GetLoadLat());
-			thread.valid = false;
-			for(int i = 0; i < threadsNum; i++)
-			{
-				int maybeThread = (thread.id + i) % threadsNum;
-				if(threads[maybeThread].valid)
-				{
-					thread = threads[maybeThread];
-					break;
-				}
-			}
-		}
-		else //halt
-		{
-			thread.valid = false;
-			for(int i = 0; i < threadsNum; i++)
+			for(int i = 1; i < threadsNum; i++)
 			{
 				Thread maybeThread = threads[(thread.id + i) % threadsNum];
-				if(maybeThread.valid || clk >= maybeThread.waitingforClk);
-				{
-					thread = maybeThread;
-					break;
-				}
-				//update statistics
-				free(threads);
-				return;
+				if(maybeThread.halt || maybeThread.stalledFor > 0)
+					continue;
+				thread = maybeThread;
+				break;
 			}
-			//check if all threads are halted
+			continue;
 		}
-		clk++;
-		//complete ins
-		//decide if context switch
-		//update statistics
+		else if(thread.halt) //try to switch if possible, else finish
+		{
+			for(int i = 1; i < threadsNum; i++)
+			{
+				Thread maybeThread = threads[(thread.id + i) % threadsNum];
+				if(maybeThread.halt || maybeThread.stalledFor > 0)
+					continue;
+				thread = maybeThread;
+				break;
+			}
+			if(!thread.halt)
+				continue;
+			free(ins);
+			return;
+		}
+		SIM_MemInstRead(thread.pc++, ins, thread.id); //thread is open to receive new ins
+		data->ins++;
+		cmd_opcode op = ins->opcode;
+		if(op == CMD_NOP)
+			continue;
+		else if(op == CMD_ADD || op == CMD_ADDI || op == CMD_SUB || op == CMD_SUBI)
+		{
+			int* result = &contexts[thread.id].reg[ins->src1_index];
+			int secondOperand = ins->isSrc2Imm ? ins->src2_index_imm : contexts[thread.id].reg[ins->src2_index_imm];
+			secondOperand *= (op == CMD_SUB || op == CMD_SUBI) ? -1 : 1;
+			*result += secondOperand;
+			continue;
+		}
+		else if(op != CMD_HALT) //store/load 
+		{
+			if(op == CMD_STORE)
+				SIM_MemDataWrite(ins->dst_index + ins->src2_index_imm, contexts[thread.id].reg[ins->src1_index]);
+			else if(op == CMD_LOAD)
+				SIM_MemDataRead(ins->src1_index + ins->src2_index_imm, &contexts[thread.id].reg[ins->dst_index]);
+			thread.stalledFor = op == CMD_STORE ? SIM_GetStoreLat() : SIM_GetLoadLat();
+			continue;
+		}
+		else if(op == CMD_HALT)
+		{
+			thread.halt = true;
+		}
 	}
 }
 
@@ -101,11 +110,18 @@ double CORE_BlockedMT_CPI(){
 	return 0;
 }
 
-double CORE_FinegrainedMT_CPI(){
-	return 0;
+double CORE_FinegrainedMT_CPI()
+{
+	double result = (double)(data->cycles / data->ins);
+	free(data);
+	free(contexts);
+	return result;
 }
 
-void CORE_BlockedMT_CTX(tcontext* context, int threadid) {
+void CORE_BlockedMT_CTX(tcontext* context, int threadid)
+{
+	for(int i = 0; i < REGS_COUNT; i++)
+		context->reg[i] = contexts[threadid].reg[i];
 }
 
 void CORE_FinegrainedMT_CTX(tcontext* context, int threadid) {
