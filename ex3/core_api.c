@@ -5,6 +5,8 @@
 
 #include <stdio.h>
 
+#define debug 1
+
 typedef struct _thread
 {
 	int id;
@@ -15,8 +17,8 @@ typedef struct _thread
 
 typedef struct _data
 {
-	double cycles;
-	double ins;
+	int cycles;
+	int ins;
 } Data;
 Data* data;
 tcontext* contexts;
@@ -40,8 +42,9 @@ void CORE_BlockedMT()
 	int k = 0;
 	while(1)
 	{
-		printf("Cycle %d, thread %d\n", k++, thread.id);
+		if(debug) printf("Cycle %d, thread %d\n", k++, thread.id);
 		data->cycles++;
+		printf("x\n");
 		for(int i = 0; i < threadsNum; i++) //decrement all counters
 		{
 			if(threads[i].stalledFor > 0)
@@ -49,6 +52,7 @@ void CORE_BlockedMT()
 		}
 		if(thread.stalledFor > 0) //try to switch
 		{
+			if(debug) printf("thread %d is stalled for %d\n", thread.id, thread.stalledFor);
 			for(int i = 1; i < threadsNum; i++)
 			{
 				Thread maybeThread = threads[(thread.id + i) % threadsNum];
@@ -75,6 +79,7 @@ void CORE_BlockedMT()
 			return;
 		}
 		SIM_MemInstRead(thread.pc++, ins, thread.id); //thread is open to receive new ins
+		if(debug) printf("read ins in pc %d in thread id %d\n", thread.pc - 1, thread.id);
 		data->ins++;
 		cmd_opcode op = ins->opcode;
 		if(op == CMD_NOP)
