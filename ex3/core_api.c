@@ -40,7 +40,7 @@ void CORE_BlockedMT()
 	int k = 0;
 	while(1)
 	{
-		printf("%d\n", k++);
+		printf("Cycle %d, thread %d\n", k++, thread.id);
 		data->cycles++;
 		for(int i = 0; i < threadsNum; i++) //decrement all counters
 		{
