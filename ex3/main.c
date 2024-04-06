@@ -16,12 +16,12 @@ int main(int argc, char const *argv[]){
 
     // Allocate register files
     tcontext *blocked = (tcontext*)malloc(threads * sizeof(tcontext));
-    // tcontext *finegrained = (tcontext*)malloc(threads * sizeof(tcontext));
+    tcontext *finegrained = (tcontext*)malloc(threads * sizeof(tcontext));
     
     // Init thread registers
 	for(int k=0; k<threads; k++) {
 	    for (int i=0; i<REGS_COUNT; i++) {
-	        // finegrained[k].reg[i] = 0;
+	        finegrained[k].reg[i] = 0;
 	    	blocked[k].reg[i] = 0;
 	    }
 	}
@@ -38,20 +38,20 @@ int main(int argc, char const *argv[]){
     printf("\nBlocked MT CPI for this program %lf\n", CORE_BlockedMT_CPI());
 
     // Start finegrained MT simulation
-	// CORE_FinegrainedMT();
-	// printf("\n-----Finegrained MT Simulation -----\n");
-	// for(int k=0; k < SIM_GetThreadsNum(); k++){
-	// 	CORE_FinegrainedMT_CTX(finegrained,k);
-	//     printf("\nRegister file thread id %d:\n",k);
-	//     for (int i = 0; i < REGS_COUNT; ++i)
-	//         printf("\tR%d = 0x%X", i, finegrained[k].reg[i]);
-	// }
-	// printf("\nFinegrained Multithreading CPI for this program %lf\n\n", CORE_FinegrainedMT_CPI());
+	CORE_FinegrainedMT();
+	printf("\n-----Finegrained MT Simulation -----\n");
+	for(int k=0; k < SIM_GetThreadsNum(); k++){
+		CORE_FinegrainedMT_CTX(finegrained,k);
+	    printf("\nRegister file thread id %d:\n",k);
+	    for (int i = 0; i < REGS_COUNT; ++i)
+	        printf("\tR%d = 0x%X", i, finegrained[k].reg[i]);
+	}
+	printf("\nFinegrained Multithreading CPI for this program %lf\n\n", CORE_FinegrainedMT_CPI());
 	SIM_MemFree();
 
     // Free register files
     free(blocked);
-    // free(finegrained);
+    free(finegrained);
 
 	return 0;
 }
