@@ -104,7 +104,7 @@ void CORE_BlockedMT()
 		{
 			if(debug) 
 			{
-				printf("cycle %d thread %d: arithmetic cmd\n", cycles, thread->id);
+				printf("cycle %d thread %d: arithmetic cmd\n", cycles-1, thread->id);
 				printf("src1 = %d, src2 = %d\n", src1, src2);
 			}
 			int* dst = &tReg[ins->dst_index];
@@ -116,7 +116,7 @@ void CORE_BlockedMT()
 		}
 		else if(op != CMD_HALT) //store/load 
 		{
-			if(debug) printf("cycle %d thread %d: load/store cmd\n", cycles, thread->id);
+			if(debug) printf("cycle %d thread %d: load/store cmd\n", cycles-1, thread->id);
 			if(op == CMD_STORE)
 			{
 				SIM_MemDataWrite(tReg[ins->dst_index] + src2, src1);
@@ -130,7 +130,7 @@ void CORE_BlockedMT()
 		}
 		else if(op == CMD_HALT)
 		{
-			if(debug) printf("cycle %d thread %d: halt cmd\n", cycles, thread->id);
+			if(debug) printf("cycle %d thread %d: halt cmd\n", cycles-1, thread->id);
 			thread->halt = true;
 		}
 	}

@@ -15,7 +15,7 @@ Register file thread id 5:
 	R0 = 0xFFFFFFFA	R1 = 0xFFFFFFFF	R2 = 0x0	R3 = 0xFFFFFFFE	R4 = 0x0	R5 = 0x0	R6 = 0x3	R7 = 0xFFFFFFFF
 Register file thread id 6:
 	R0 = 0x4	R1 = 0x4	R2 = 0x0	R3 = 0x0	R4 = 0x0	R5 = 0x0	R6 = 0x0	R7 = 0x4
-Blocked MT CPI for this program 1.803571
+Blocked MT CPI for this program 1.767857
 
 -----Finegrained MT Simulation -----
 
